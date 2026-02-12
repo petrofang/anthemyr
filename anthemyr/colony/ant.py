@@ -409,6 +409,11 @@ class Ant:
         avoiding the trap of oscillating on trail fragments near the
         nest entrance.
 
+        **Food selection**: Gatherers only pick up food when it's
+        worthwhile — either a motherlode (≥3.0) or part of a dense
+        food cluster.  This prevents distraction by isolated crumbs
+        along the way.  Dense cluster = 3+ adjacent cells with food.
+
         If the gatherer finds food it picks it up, resets its patience
         counter, and switches to CARRYING_FOOD.  If it walks for
         ``_GATHER_PATIENCE_MAX`` ticks without finding food (the source
@@ -421,34 +426,41 @@ class Ant:
 
         cell = world.cell_at(self.x, self.y)
 
-        # Found food -- pick it up
+        # Check if worth picking up: motherlode OR part of dense cluster
         if cell.food > 0 and not cell.is_nest:
             remaining_before = cell.food
-            pickup = min(cell.food, _FOOD_PICKUP)
-            cell.food -= pickup
-            self.carrying_food = pickup
-            self.task = Task.CARRYING_FOOD
-            self._gather_patience = _GATHER_PATIENCE_MAX
+            is_motherlode = remaining_before >= _MOTHERLODE_THRESHOLD
+            is_dense_cluster = self._is_in_food_cluster(world, self.x, self.y)
 
-            # Refresh recruitment signal if still a motherlode
-            if remaining_before >= _MOTHERLODE_THRESHOLD:
-                self._lay_trail = True
-                pheromones.deposit(
-                    PheromoneType.TRAIL,
-                    self.x,
-                    self.y,
-                    _TRAIL_DEPOSIT_AT_FOOD,
-                )
-                pheromones.deposit(
-                    PheromoneType.RECRUITMENT,
-                    self.x,
-                    self.y,
-                    _RECRUITMENT_DEPOSIT,
-                )
-            else:
-                # Source nearly depleted -- stop laying trail
-                self._lay_trail = False
-            return
+            if is_motherlode or is_dense_cluster:
+                # Worth picking up -- commit to carrying
+                pickup = min(cell.food, _FOOD_PICKUP)
+                cell.food -= pickup
+                self.carrying_food = pickup
+                self.task = Task.CARRYING_FOOD
+                self._gather_patience = _GATHER_PATIENCE_MAX
+
+                # Refresh recruitment signal if still a motherlode
+                if is_motherlode:
+                    self._lay_trail = True
+                    pheromones.deposit(
+                        PheromoneType.TRAIL,
+                        self.x,
+                        self.y,
+                        _TRAIL_DEPOSIT_AT_FOOD,
+                    )
+                    pheromones.deposit(
+                        PheromoneType.RECRUITMENT,
+                        self.x,
+                        self.y,
+                        _RECRUITMENT_DEPOSIT,
+                    )
+                else:
+                    # Dense cluster, not motherlode -- still lay trail
+                    # but more softly to avoid confusing scouts
+                    self._lay_trail = True
+                return
+            # Small food on isolated cell -- ignore, stay on trail
 
         # No food here -- count down patience
         self._gather_patience -= 1
@@ -619,6 +631,29 @@ class Ant:
         top = min(2, len(neighbours))
         chosen = neighbours[int(rng.integers(top))]
         self._step_to(chosen)
+
+    def _is_in_food_cluster(self, world: World, x: int, y: int) -> bool:
+        """Check if a cell is part of a dense food cluster.
+
+        Dense cluster = 3+ adjacent cells (including current cell) have
+        food > 0.  This helps gatherers distinguish between isolated
+        food crumbs and real food sources.
+
+        Args:
+            world: The world grid.
+            x: Cell X coordinate.
+            y: Cell Y coordinate.
+
+        Returns:
+            True if this cell is part of a cluster, False otherwise.
+        """
+        neighbours = world.neighbours(x, y)
+        # Count cells with food, including current cell
+        food_count = 1 if world.cell_at(x, y).food > 0 else 0
+        for cell in neighbours:
+            if cell.food > 0:
+                food_count += 1
+        return food_count >= 3
 
     def _best_directional_trail(
         self,
