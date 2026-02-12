@@ -25,6 +25,7 @@ class SimulationConfig:
         initial_ants: Starting ant population per colony.
         max_age: Maximum ant lifespan in ticks before death.
         starvation_damage: HP lost per ant per tick when food is 0.
+        consumption_per_ant: Food consumed per ant per tick.
         food_regen_rate: Probability per cell per tick of food regrowth.
         food_cap: Maximum food a cell can hold.
         egg_rate: Eggs laid per tick per unit of surplus food.
@@ -39,16 +40,17 @@ class SimulationConfig:
     initial_ants: int = 50
 
     # Ant lifecycle
-    max_age: int = 500
-    starvation_damage: float = 0.05
+    max_age: int = 1000
+    starvation_damage: float = 0.02
+    consumption_per_ant: float = 0.02
 
     # Food regeneration
-    food_regen_rate: float = 0.002
+    food_regen_rate: float = 0.005
     food_cap: float = 5.0
 
     # Brood development
-    egg_rate: float = 0.1
-    brood_mature_ticks: int = 100
+    egg_rate: float = 0.08
+    brood_mature_ticks: int = 80
 
     pheromone_defaults: dict[str, dict[str, float]] = field(default_factory=dict)
 
@@ -76,6 +78,10 @@ class SimulationConfig:
             day_length=data.get("day_length", cls.day_length),
             initial_ants=data.get("initial_ants", cls.initial_ants),
             max_age=data.get("max_age", cls.max_age),
+            consumption_per_ant=data.get(
+                "consumption_per_ant",
+                cls.consumption_per_ant,
+            ),
             starvation_damage=data.get(
                 "starvation_damage",
                 cls.starvation_damage,

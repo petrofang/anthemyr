@@ -12,16 +12,17 @@ day_length: 100  # ticks per full day/night cycle
 
 # Colony
 initial_ants: 50
-max_age: 500               # ticks before an ant dies of old age
-starvation_damage: 0.05    # HP lost per ant per tick when food_stores is 0
+max_age: 1000              # ticks before an ant dies of old age
+starvation_damage: 0.02    # HP lost per ant per tick when food_stores is 0
+consumption_per_ant: 0.02  # food consumed per ant per tick
 
 # Food regeneration
-food_regen_rate: 0.002     # probability per non-nest cell per tick
+food_regen_rate: 0.005     # probability per non-nest cell per tick
 food_cap: 5.0              # max food a cell can hold
 
 # Brood development
-egg_rate: 0.1              # eggs laid per tick per unit of surplus food
-brood_mature_ticks: 100    # ticks for brood to become an adult ant
+egg_rate: 0.08             # eggs laid per tick per unit of surplus food
+brood_mature_ticks: 80     # ticks for brood to become an adult ant
 
 # Per-pheromone-type overrides for diffusion and evaporation rates.
 # Any type not listed here uses the PheromoneLayer defaults (0.1 / 0.05).

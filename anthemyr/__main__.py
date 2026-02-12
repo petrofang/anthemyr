@@ -48,9 +48,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--speed",
-        type=int,
-        default=1,
-        help="Simulation ticks per frame (default: 1)",
+        type=float,
+        default=10.0,
+        help="Simulation ticks per second (default: 10)",
     )
     args = parser.parse_args()
 
@@ -69,7 +69,7 @@ def main() -> None:
     renderer = PygameRenderer(
         engine=engine,
         cell_size=args.cell_size,
-        ticks_per_frame=args.speed,
+        ticks_per_second=args.speed,
     )
     renderer.run(fps=args.fps)
 

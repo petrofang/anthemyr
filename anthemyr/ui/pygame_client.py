@@ -7,7 +7,7 @@ refreshes at the Pygame frame rate.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 import pygame
@@ -51,22 +51,39 @@ class PygameRenderer:
         screen: The Pygame display surface.
     """
 
+    # Speed presets: ticks per second at 30 fps
+    _SPEED_STEPS: ClassVar[list[float]] = [
+        0.5,
+        1.0,
+        3.0,
+        5.0,
+        10.0,
+        15.0,
+        30.0,
+        60.0,
+        120.0,
+        300.0,
+        600.0,
+    ]
+
     def __init__(
         self,
         engine: SimulationEngine,
         cell_size: int = 10,
-        ticks_per_frame: int = 1,
+        ticks_per_second: float = 10.0,
     ) -> None:
         """Initialise the renderer.
 
         Args:
             engine: The simulation engine to render.
             cell_size: Pixel width/height per grid cell.
-            ticks_per_frame: Simulation ticks per display frame.
+            ticks_per_second: Simulation ticks per real-time second.
         """
         self.engine = engine
         self.cell_size = cell_size
-        self.ticks_per_frame = ticks_per_frame
+        self.ticks_per_second = ticks_per_second
+        self._speed_index = self._nearest_speed(ticks_per_second)
+        self._tick_accumulator = 0.0
 
         w = engine.world.width * cell_size
         h = engine.world.height * cell_size
@@ -82,6 +99,16 @@ class PygameRenderer:
         self.running = True
         self.paused = False
 
+    def _nearest_speed(self, tps: float) -> int:
+        """Return the index of the closest speed preset."""
+        best = 0
+        best_diff = abs(self._SPEED_STEPS[0] - tps)
+        for i, s in enumerate(self._SPEED_STEPS):
+            diff = abs(s - tps)
+            if diff < best_diff:
+                best, best_diff = i, diff
+        return best
+
     def run(self, fps: int = 30) -> None:
         """Main loop: handle events, step sim, render.
 
@@ -89,12 +116,15 @@ class PygameRenderer:
             fps: Target frames per second.
         """
         while self.running:
+            dt = self.clock.tick(fps) / 1000.0  # seconds elapsed
             self._handle_events()
             if not self.paused:
-                for _ in range(self.ticks_per_frame):
+                self._tick_accumulator += self.ticks_per_second * dt
+                steps = int(self._tick_accumulator)
+                self._tick_accumulator -= steps
+                for _ in range(steps):
                     self.engine.step()
             self._draw()
-            self.clock.tick(fps)
 
         pygame.quit()
 
@@ -108,16 +138,15 @@ class PygameRenderer:
                     self.running = False
                 elif event.key == pygame.K_SPACE:
                     self.paused = not self.paused
-                elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
-                    self.ticks_per_frame = min(
-                        20,
-                        self.ticks_per_frame + 1,
+                elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
+                    self._speed_index = min(
+                        len(self._SPEED_STEPS) - 1,
+                        self._speed_index + 1,
                     )
+                    self.ticks_per_second = self._SPEED_STEPS[self._speed_index]
                 elif event.key == pygame.K_MINUS:
-                    self.ticks_per_frame = max(
-                        1,
-                        self.ticks_per_frame - 1,
-                    )
+                    self._speed_index = max(0, self._speed_index - 1)
+                    self.ticks_per_second = self._SPEED_STEPS[self._speed_index]
 
     def _draw(self) -> None:
         """Render one frame."""
@@ -204,7 +233,7 @@ class PygameRenderer:
 
         lines = [
             f"Tick: {self.engine.tick}",
-            f"Speed: {self.ticks_per_frame}x",
+            f"Speed: {self.ticks_per_second:.1f} t/s",
             f"{'PAUSED' if self.paused else 'RUNNING'}",
             "",
             "--- Colony ---",

@@ -115,7 +115,7 @@ class SimulationEngine:
 
         # 5. Colony-level effects
         for colony in self.colonies:
-            colony.consume_food()
+            colony.consume_food(self.config.consumption_per_ant)
             colony.apply_starvation(self.config.starvation_damage)
             colony.apply_aging(self.config.max_age)
 
