@@ -53,13 +53,13 @@ class TestWorld:
 
     def test_populate_scatters_food(self, rng: Generator) -> None:
         world = World(width=16, height=16)
-        world.populate(rng, food_density=0.5)
+        world.populate(rng)
         total_food = sum(c.food for row in world.cells for c in row)
         assert total_food > 0
 
-    def test_populate_respects_density_zero(self, rng: Generator) -> None:
+    def test_populate_no_food_with_zero_patches(self, rng: Generator) -> None:
         world = World(width=8, height=8)
-        world.populate(rng, food_density=0.0)
+        world.populate(rng, num_patches=0)
         total_food = sum(c.food for row in world.cells for c in row)
         assert total_food == 0.0
 

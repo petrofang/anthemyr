@@ -42,10 +42,10 @@ def diffuse(layer: PheromoneLayer) -> None:
 
     share = donated / 4.0
     # Shift in each cardinal direction and accumulate
-    grid[1:, :] += share[:-1, :]   # donate downward
-    grid[:-1, :] += share[1:, :]   # donate upward
-    grid[:, 1:] += share[:, :-1]   # donate rightward
-    grid[:, :-1] += share[:, 1:]   # donate leftward
+    grid[1:, :] += share[:-1, :]  # donate downward
+    grid[:-1, :] += share[1:, :]  # donate upward
+    grid[:, 1:] += share[:, :-1]  # donate rightward
+    grid[:, :-1] += share[:, 1:]  # donate leftward
 
 
 def update_field(field: PheromoneField) -> None:

@@ -99,7 +99,7 @@ class TestAntForaging:
         phero = PheromoneField(width=8, height=8)
         ant = Ant(x=4, y=4, task=Task.CARRYING_FOOD, carrying_food=1.0)
         food = ant.update(world, phero, 4, 4, rng)
-        assert ant.task == Task.IDLE
+        assert ant.task == Task.FORAGING
         assert ant.carrying_food == 0.0
         assert food == 1.0
 

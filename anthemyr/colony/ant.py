@@ -171,7 +171,7 @@ class Ant:
 
         # Pick up food if present
         if cell.food > 0 and not cell.is_nest:
-            pickup = min(cell.food, 1.0)
+            pickup = min(cell.food, 3.0)
             cell.food -= pickup
             self.carrying_food = pickup
             self.task = Task.CARRYING_FOOD
@@ -197,6 +197,9 @@ class Ant:
     ) -> float:
         """CARRYING_FOOD ants walk toward the nest and deposit food.
 
+        After depositing, the ant transitions straight to FORAGING
+        to avoid wasting ticks in IDLE re-rolling thresholds.
+
         Returns:
             Amount of food deposited (> 0 only when reaching nest).
         """
@@ -204,7 +207,7 @@ class Ant:
         if world.cell_at(self.x, self.y).is_nest:
             deposited = self.carrying_food
             self.carrying_food = 0.0
-            self.task = Task.IDLE
+            self.task = Task.FORAGING
             return deposited
 
         # Move toward nest with some randomness
@@ -220,7 +223,7 @@ class Ant:
     ) -> None:
         """Move to a neighbour, biased by pheromone concentration.
 
-        With probability 0.3, follows the strongest pheromone gradient;
+        With probability 0.6, follows the strongest pheromone gradient;
         otherwise picks a random neighbour.  This balance between
         exploitation and exploration is key to emergent trail formation.
         """
@@ -230,7 +233,7 @@ class Ant:
         if not neighbours:
             return
 
-        if rng.random() < 0.3 and isinstance(bias_type, PheromoneType):
+        if rng.random() < 0.6 and isinstance(bias_type, PheromoneType):
             best = self._best_pheromone_neighbour(
                 neighbours,
                 pheromones,
@@ -260,8 +263,8 @@ class Ant:
         neighbours.sort(
             key=lambda c: abs(c.x - target_x) + abs(c.y - target_y),
         )
-        # Pick from the closest 1-3 neighbours for some variance
-        top = min(3, len(neighbours))
+        # Pick from the closest 1-2 neighbours for faster returns
+        top = min(2, len(neighbours))
         chosen = neighbours[int(rng.integers(top))]
         self.x, self.y = chosen.x, chosen.y
 

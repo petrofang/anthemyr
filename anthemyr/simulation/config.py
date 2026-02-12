@@ -24,11 +24,14 @@ class SimulationConfig:
         day_length: Ticks per full day/night cycle.
         initial_ants: Starting ant population per colony.
         max_age: Maximum ant lifespan in ticks before death.
-        starvation_damage: HP lost per ant per tick when food is 0.
+        comfort_food_per_ant: Food-per-ant level at which health
+            pressure is zero and reproduction begins.
+        max_starvation_damage: Maximum HP lost per ant per tick when
+            food-per-ant is zero.
         consumption_per_ant: Food consumed per ant per tick.
         food_regen_rate: Probability per cell per tick of food regrowth.
         food_cap: Maximum food a cell can hold.
-        egg_rate: Eggs laid per tick per unit of surplus food.
+        egg_rate: Maximum eggs per tick at high food-per-ant.
         brood_mature_ticks: Ticks for brood to mature into an adult ant.
         pheromone_defaults: Per-type diffusion/evaporation overrides.
     """
@@ -41,15 +44,16 @@ class SimulationConfig:
 
     # Ant lifecycle
     max_age: int = 1000
-    starvation_damage: float = 0.02
+    comfort_food_per_ant: float = 2.0
+    max_starvation_damage: float = 0.04
     consumption_per_ant: float = 0.02
 
     # Food regeneration
-    food_regen_rate: float = 0.005
+    food_regen_rate: float = 0.01
     food_cap: float = 5.0
 
     # Brood development
-    egg_rate: float = 0.08
+    egg_rate: float = 0.5
     brood_mature_ticks: int = 80
 
     pheromone_defaults: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -78,13 +82,17 @@ class SimulationConfig:
             day_length=data.get("day_length", cls.day_length),
             initial_ants=data.get("initial_ants", cls.initial_ants),
             max_age=data.get("max_age", cls.max_age),
+            comfort_food_per_ant=data.get(
+                "comfort_food_per_ant",
+                cls.comfort_food_per_ant,
+            ),
+            max_starvation_damage=data.get(
+                "max_starvation_damage",
+                cls.max_starvation_damage,
+            ),
             consumption_per_ant=data.get(
                 "consumption_per_ant",
                 cls.consumption_per_ant,
-            ),
-            starvation_damage=data.get(
-                "starvation_damage",
-                cls.starvation_damage,
             ),
             food_regen_rate=data.get(
                 "food_regen_rate",

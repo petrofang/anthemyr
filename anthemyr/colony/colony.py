@@ -73,14 +73,37 @@ class Colony:
         consumption = len(self.ants) * amount_per_ant
         self.food_stores = max(0.0, self.food_stores - consumption)
 
-    def apply_starvation(self, damage: float) -> None:
-        """Damage all ants when the colony has no food.
+    def apply_food_pressure(
+        self,
+        comfort_food_per_ant: float,
+        max_damage: float,
+    ) -> None:
+        """Apply smooth, density-dependent health pressure.
+
+        When food-per-ant is at or above the comfort level, no damage.
+        When food-per-ant is zero, each ant receives ``max_damage``.
+        Between these extremes the damage scales linearly, creating a
+        smooth negative-feedback loop: larger populations feel more
+        pressure, naturally limiting growth.
 
         Args:
-            damage: HP lost per ant this tick.
+            comfort_food_per_ant: Food-per-ant level at which pressure
+                is zero (colony is comfortable).
+            max_damage: Maximum HP lost per ant per tick (at zero food).
         """
-        if self.food_stores > 0:
+        n = len(self.ants)
+        if n == 0:
             return
+
+        food_per_ant = self.food_stores / n
+
+        if food_per_ant >= comfort_food_per_ant:
+            return  # colony is comfortable — no pressure
+
+        # Linear interpolation: 0 food → max_damage, comfort → 0
+        ratio = food_per_ant / comfort_food_per_ant
+        damage = max_damage * (1.0 - ratio)
+
         for ant in self.ants:
             ant.hp -= damage
 
@@ -94,20 +117,40 @@ class Colony:
             if ant.age >= max_age:
                 ant.hp = 0.0
 
-    def lay_eggs(self, egg_rate: float, rng: Generator) -> None:
-        """Queen lays eggs proportional to surplus food stores.
+    def lay_eggs(
+        self,
+        egg_rate: float,
+        comfort_food_per_ant: float,
+        rng: Generator,
+    ) -> None:
+        """Queen lays eggs when per-capita food exceeds comfort level.
 
-        Egg-laying costs food: each egg costs 1 unit.
+        Egg-laying scales with how far above comfort the colony is,
+        creating a natural cap: as population grows, food-per-ant drops
+        and reproduction slows — a smooth density-dependent brake.
+
+        Each egg costs 1 food unit.
 
         Args:
-            egg_rate: Eggs per tick per unit of surplus food.
+            egg_rate: Maximum eggs per tick at very high food-per-ant.
+            comfort_food_per_ant: Food-per-ant threshold below which
+                the queen stops laying.
             rng: Seeded random generator.
         """
-        if self.food_stores <= 10.0:
-            return  # need a baseline before investing in brood
+        n = len(self.ants)
+        # Need at least 1 ant (the queen) and some food
+        if n == 0 or self.food_stores < 1.0:
+            return
 
-        surplus = self.food_stores - 10.0
-        expected_eggs = surplus * egg_rate
+        food_per_ant = self.food_stores / n
+
+        if food_per_ant <= comfort_food_per_ant:
+            return  # colony is stressed — no reproduction
+
+        # Proportion above comfort: scales 0→∞ but we cap the egg output
+        excess_ratio = (food_per_ant - comfort_food_per_ant) / comfort_food_per_ant
+        expected_eggs = egg_rate * min(excess_ratio, 3.0)
+
         # Stochastic: fractional part becomes a probability
         whole = int(expected_eggs)
         frac = expected_eggs - whole

@@ -116,7 +116,10 @@ class SimulationEngine:
         # 5. Colony-level effects
         for colony in self.colonies:
             colony.consume_food(self.config.consumption_per_ant)
-            colony.apply_starvation(self.config.starvation_damage)
+            colony.apply_food_pressure(
+                self.config.comfort_food_per_ant,
+                self.config.max_starvation_damage,
+            )
             colony.apply_aging(self.config.max_age)
 
             # Deposit DEATH pheromone at corpse sites before removing
@@ -130,7 +133,11 @@ class SimulationEngine:
                 )
 
             # Brood lifecycle
-            colony.lay_eggs(self.config.egg_rate, self.rng)
+            colony.lay_eggs(
+                self.config.egg_rate,
+                self.config.comfort_food_per_ant,
+                self.rng,
+            )
             colony.develop_brood(
                 self.config.brood_mature_ticks,
                 self.rng,

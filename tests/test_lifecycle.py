@@ -1,5 +1,6 @@
 """Tests for colony lifecycle - aging, starvation, food regen, brood."""
 
+import pytest
 from numpy.random import Generator
 
 from anthemyr.colony.colony import Colony
@@ -51,37 +52,76 @@ class TestAging:
         assert death_grid.sum() > 0
 
 
-class TestStarvation:
-    """Tests for starvation mechanics."""
+class TestFoodPressure:
+    """Tests for per-capita food pressure mechanics."""
 
-    def test_starvation_damages_ants(self, rng: Generator) -> None:
-        """Ants lose HP when colony food is depleted."""
+    def test_pressure_damages_ants_when_food_low(self, rng: Generator) -> None:
+        """Ants lose HP when food-per-ant is below comfort level."""
         colony = Colony(
+            colony_id=0,
+            nest_x=4,
+            nest_y=4,
+            food_stores=1.0,  # 1.0 / 1 ant = 1.0, below comfort=2.0
+        )
+        ant = colony.spawn_ant(rng)
+        initial_hp = ant.hp
+        colony.apply_food_pressure(comfort_food_per_ant=2.0, max_damage=0.1)
+        assert ant.hp < initial_hp
+
+    def test_no_damage_when_food_comfortable(self, rng: Generator) -> None:
+        """Ants are not damaged when food-per-ant exceeds comfort."""
+        colony = Colony(
+            colony_id=0,
+            nest_x=4,
+            nest_y=4,
+            food_stores=50.0,  # 50.0 / 1 ant = 50.0, well above comfort
+        )
+        ant = colony.spawn_ant(rng)
+        initial_hp = ant.hp
+        colony.apply_food_pressure(comfort_food_per_ant=2.0, max_damage=0.1)
+        assert ant.hp == initial_hp
+
+    def test_pressure_proportional_to_scarcity(self, rng: Generator) -> None:
+        """More scarcity means more damage (smooth gradient)."""
+        # Colony with half-comfort food (1.0 food / 1 ant = 1.0)
+        colony_half = Colony(
+            colony_id=0,
+            nest_x=4,
+            nest_y=4,
+            food_stores=1.0,
+        )
+        ant_half = colony_half.spawn_ant(rng)
+        hp_before_half = ant_half.hp
+        colony_half.apply_food_pressure(
+            comfort_food_per_ant=2.0,
+            max_damage=0.1,
+        )
+        damage_half = hp_before_half - ant_half.hp
+
+        # Colony with zero food
+        colony_zero = Colony(
             colony_id=0,
             nest_x=4,
             nest_y=4,
             food_stores=0.0,
         )
-        ant = colony.spawn_ant(rng)
-        initial_hp = ant.hp
-        colony.apply_starvation(damage=0.1)
-        assert ant.hp < initial_hp
-
-    def test_no_damage_with_food(self, rng: Generator) -> None:
-        """Ants are not damaged when colony has food."""
-        colony = Colony(
-            colony_id=0,
-            nest_x=4,
-            nest_y=4,
-            food_stores=50.0,
+        ant_zero = colony_zero.spawn_ant(rng)
+        hp_before_zero = ant_zero.hp
+        colony_zero.apply_food_pressure(
+            comfort_food_per_ant=2.0,
+            max_damage=0.1,
         )
-        ant = colony.spawn_ant(rng)
-        initial_hp = ant.hp
-        colony.apply_starvation(damage=0.1)
-        assert ant.hp == initial_hp
+        damage_zero = hp_before_zero - ant_zero.hp
 
-    def test_starvation_eventually_kills(self, rng: Generator) -> None:
-        """Repeated starvation reduces HP to 0."""
+        # Zero food should cause max damage
+        assert damage_zero == pytest.approx(0.1)
+        # Half-comfort should cause half the max damage
+        assert damage_half == pytest.approx(0.05)
+        # More scarcity → more damage
+        assert damage_zero > damage_half
+
+    def test_pressure_eventually_kills(self, rng: Generator) -> None:
+        """Sustained pressure reduces HP to 0."""
         colony = Colony(
             colony_id=0,
             nest_x=4,
@@ -90,10 +130,13 @@ class TestStarvation:
         )
         ant = colony.spawn_ant(rng)
         for _ in range(20):
-            colony.apply_starvation(damage=0.1)
+            colony.apply_food_pressure(
+                comfort_food_per_ant=2.0,
+                max_damage=0.1,
+            )
         assert not ant.is_alive
 
-    def test_engine_starvation_kills_ants(self) -> None:
+    def test_engine_pressure_kills_ants(self) -> None:
         """Full engine integration: starving colony loses ants."""
         cfg = SimulationConfig(
             seed=42,
@@ -101,7 +144,8 @@ class TestStarvation:
             world_height=8,
             initial_ants=10,
             max_age=99999,
-            starvation_damage=0.5,
+            comfort_food_per_ant=2.0,
+            max_starvation_damage=0.5,
             food_regen_rate=0.0,
         )
         engine = SimulationEngine(config=cfg)
@@ -113,7 +157,7 @@ class TestStarvation:
         )
         engine.add_colony(colony)
         engine.run(ticks=5)
-        # With 0.5 damage/tick and 1.0 HP, ants die in 2 ticks
+        # With 0.5 max damage/tick and ~1.0 HP, ants die in 2 ticks
         assert len(colony.ants) < 10
 
 
@@ -161,25 +205,29 @@ class TestBroodDevelopment:
     """Tests for queen egg-laying and brood maturation."""
 
     def test_no_eggs_when_low_food(self, rng: Generator) -> None:
-        """Colony doesn't lay eggs when food stores are low."""
+        """Colony doesn't lay eggs when food-per-ant is below comfort."""
         colony = Colony(
             colony_id=0,
             nest_x=4,
             nest_y=4,
             food_stores=5.0,
         )
-        colony.lay_eggs(egg_rate=0.1, rng=rng)
+        colony.spawn_ant(rng)  # 1 ant, food_per_ant = 5.0
+        colony.spawn_ant(rng)  # 2 ants, food_per_ant = 2.5
+        colony.spawn_ant(rng)  # 3 ants, food_per_ant = 1.67 < 2.0
+        colony.lay_eggs(egg_rate=0.5, comfort_food_per_ant=2.0, rng=rng)
         assert colony.brood_count == 0
 
     def test_eggs_laid_with_surplus(self, rng: Generator) -> None:
-        """Colony lays eggs when food exceeds threshold."""
+        """Colony lays eggs when food-per-ant exceeds comfort."""
         colony = Colony(
             colony_id=0,
             nest_x=4,
             nest_y=4,
             food_stores=60.0,
         )
-        colony.lay_eggs(egg_rate=0.5, rng=rng)
+        colony.spawn_ant(rng)  # 1 ant, food_per_ant = 60.0 >> 2.0
+        colony.lay_eggs(egg_rate=0.5, comfort_food_per_ant=2.0, rng=rng)
         assert colony.brood_count > 0
 
     def test_egg_laying_costs_food(self, rng: Generator) -> None:
@@ -190,8 +238,9 @@ class TestBroodDevelopment:
             nest_y=4,
             food_stores=60.0,
         )
+        colony.spawn_ant(rng)
         food_before = colony.food_stores
-        colony.lay_eggs(egg_rate=0.5, rng=rng)
+        colony.lay_eggs(egg_rate=0.5, comfort_food_per_ant=2.0, rng=rng)
         if colony.brood_count > 0:
             assert colony.food_stores < food_before
 
@@ -242,7 +291,8 @@ class TestBroodDevelopment:
             world_height=16,
             initial_ants=10,
             max_age=99999,
-            starvation_damage=0.05,
+            comfort_food_per_ant=2.0,
+            max_starvation_damage=0.05,
             food_regen_rate=0.05,
             food_cap=5.0,
             egg_rate=0.5,
@@ -275,10 +325,11 @@ class TestLifecycleDeterminism:
             world_height=8,
             initial_ants=5,
             max_age=100,
-            starvation_damage=0.05,
+            comfort_food_per_ant=2.0,
+            max_starvation_damage=0.05,
             food_regen_rate=0.01,
             food_cap=5.0,
-            egg_rate=0.2,
+            egg_rate=0.5,
             brood_mature_ticks=30,
         )
 

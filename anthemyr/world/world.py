@@ -83,21 +83,38 @@ class World:
         self,
         rng: Generator,
         *,
-        food_density: float = 0.15,
-        food_amount_range: tuple[float, float] = (1.0, 5.0),
+        num_patches: int = 12,
+        patch_radius: int = 4,
+        food_per_cell: tuple[float, float] = (2.0, 5.0),
     ) -> None:
-        """Scatter food across the grid randomly.
+        """Place clustered food patches across the grid.
+
+        Instead of sparse random scatter, creates a number of rich
+        food patches that reward trail formation and exploitation.
 
         Args:
             rng: Seeded random generator.
-            food_density: Probability that any given cell has food.
-            food_amount_range: (min, max) food placed per seeded cell.
+            num_patches: Number of food patches to place.
+            patch_radius: Radius of each patch in cells.
+            food_per_cell: (min, max) food placed per cell in a patch.
         """
-        lo, hi = food_amount_range
-        for row in self.cells:
-            for cell in row:
-                if rng.random() < food_density:
-                    cell.food = float(rng.uniform(lo, hi))
+        lo, hi = food_per_cell
+        for _ in range(num_patches):
+            cx = int(rng.integers(0, self.width))
+            cy = int(rng.integers(0, self.height))
+            for dy in range(-patch_radius, patch_radius + 1):
+                for dx in range(-patch_radius, patch_radius + 1):
+                    nx, ny = cx + dx, cy + dy
+                    if not (0 <= nx < self.width and 0 <= ny < self.height):
+                        continue
+                    # Circular falloff: cells near centre get more food
+                    dist = (dx * dx + dy * dy) ** 0.5
+                    if dist <= patch_radius:
+                        cell = self.cells[ny][nx]
+                        if not cell.is_nest:
+                            cell.food += float(
+                                rng.uniform(lo, hi) * (1.0 - dist / (patch_radius + 1)),
+                            )
 
     def mark_nest(self, cx: int, cy: int, radius: int = 2) -> None:
         """Mark cells around ``(cx, cy)`` as nest territory.
