@@ -87,7 +87,8 @@ class Ant:
             "brood": float(rng.normal(traits.brood_care_threshold_mean, var)),
             "waste": float(rng.normal(traits.waste_threshold_mean, var)),
         }
-        return cls(x=x, y=y, thresholds=thresholds)
+        hp = float(rng.uniform(0.8, 1.2))
+        return cls(x=x, y=y, hp=hp, thresholds=thresholds)
 
     def update(
         self,
