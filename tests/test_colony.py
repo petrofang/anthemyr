@@ -288,3 +288,36 @@ class TestGathering:
                 switched = True
                 break
         assert switched, "Foraging ant should respond to recruitment"
+
+    def test_gatherer_follows_trail_away_from_nest(
+        self,
+        rng: Generator,
+    ) -> None:
+        """GATHERING ant prefers trail cells leading away from the nest."""
+        world = World(width=12, height=12)
+        phero = PheromoneField(width=12, height=12)
+        # Nest at (6, 6).  Ant at (5, 6).
+        # Place equal trail pheromone both toward and away from nest.
+        phero.deposit(PheromoneType.TRAIL, 4, 6, 5.0)  # away from nest
+        phero.deposit(PheromoneType.TRAIL, 6, 6, 5.0)  # toward nest
+        ant = Ant(
+            x=5,
+            y=6,
+            task=Task.GATHERING,
+            _lay_trail=True,
+            _gather_patience=60,
+        )
+        # Run multiple times; should prefer moving away (toward x=4)
+        away_count = 0
+        trials = 50
+        for _ in range(trials):
+            ant.x, ant.y = 5, 6
+            ant.task = Task.GATHERING
+            ant._gather_patience = 60
+            ant.update(world, phero, 6, 6, rng)
+            if ant.x == 4:
+                away_count += 1
+        # Should strongly prefer away from nest
+        assert away_count > trials * 0.5, (
+            f"Gatherer went away {away_count}/{trials} times, expected majority"
+        )

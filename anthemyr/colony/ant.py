@@ -181,7 +181,7 @@ class Ant:
             case Task.FORAGING:
                 self._forage(world, pheromones, rng)
             case Task.GATHERING:
-                self._gather(world, pheromones, rng)
+                self._gather(world, pheromones, nest_x, nest_y, rng)
             case Task.CARRYING_FOOD:
                 food_deposited = self._carry_food_home(
                     world,
@@ -395,6 +395,8 @@ class Ant:
         self,
         world: World,
         pheromones: PheromoneField,
+        nest_x: int,
+        nest_y: int,
         rng: Generator,
     ) -> None:
         """GATHERING ants exploit a known food source via pheromone trails.
@@ -402,7 +404,10 @@ class Ant:
         Unlike foraging scouts, gatherers follow TRAIL and RECRUITMENT
         pheromone at a high rate (75%) to efficiently reach a food
         source discovered by a scout.  They reinforce the trail as
-        they walk (handled in ``update()``).
+        they walk (handled in ``update()``).  Movement is directional
+        -- gatherers prefer trail cells that lead *away from* the nest,
+        avoiding the trap of oscillating on trail fragments near the
+        nest entrance.
 
         If the gatherer finds food it picks it up, resets its patience
         counter, and switches to CARRYING_FOOD.  If it walks for
@@ -455,50 +460,51 @@ class Ant:
             return
 
         # Move toward food source via pheromone trail
-        self._move_gathering(world, pheromones, rng)
+        self._move_gathering(world, pheromones, nest_x, nest_y, rng)
 
     def _move_gathering(
         self,
         world: World,
         pheromones: PheromoneField,
+        nest_x: int,
+        nest_y: int,
         rng: Generator,
     ) -> None:
-        """Move as a gatherer: high trail-follow rate with recruitment fallback.
+        """Move as a gatherer: follow trail *away from* the nest.
+
+        Gatherers use directional trail-following -- they prefer trail
+        cells that lead away from the nest, avoiding the trap of
+        oscillating on strong trail fragments near the nest entrance.
+        This mirrors real ants using polarity cues (sun compass +
+        trail gradient) to determine which direction to walk along
+        a bidirectional pheromone trail.
 
         Decision order:
 
         1. With probability ``_GATHER_FOLLOW_RATE`` (75%), follow the
-           strongest TRAIL pheromone.  If no TRAIL is nearby, try
-           RECRUITMENT pheromone instead.
-        2. Otherwise, fall back to a correlated random walk so the
-           gatherer isn't permanently stuck if the trail evaporates.
+           best directional trail (TRAIL, then RECRUITMENT fallback).
+           "Best" combines pheromone strength with preference for cells
+           farther from the nest.
+        2. Otherwise, fall back to a correlated random walk.
         """
-        from anthemyr.pheromones.fields import PheromoneType
-
         neighbours = world.neighbours(self.x, self.y)
         if not neighbours:
             return
 
-        # 1. High-rate pheromone following (75%)
+        # 1. Directional pheromone following (75%) -- prefer away from nest
         if rng.random() < _GATHER_FOLLOW_RATE:
-            # Prefer TRAIL, fall back to RECRUITMENT
-            best = self._best_pheromone_neighbour(
+            best = self._best_directional_trail(
                 neighbours,
                 pheromones,
-                PheromoneType.TRAIL,
+                nest_x,
+                nest_y,
+                toward_nest=False,
             )
-            if best is None:
-                best = self._best_pheromone_neighbour(
-                    neighbours,
-                    pheromones,
-                    PheromoneType.RECRUITMENT,
-                )
             if best is not None:
                 self._step_to(best)
                 return
 
-        # 2. Correlated walk fallback (no territory avoidance --
-        #    gatherers don't care about explored area)
+        # 2. Correlated walk fallback
         self._correlated_step(world, pheromones, rng)
 
     def _move_foraging(
@@ -613,6 +619,72 @@ class Ant:
         top = min(2, len(neighbours))
         chosen = neighbours[int(rng.integers(top))]
         self._step_to(chosen)
+
+    def _best_directional_trail(
+        self,
+        neighbours: list[Cell],
+        pheromones: PheromoneField,
+        nest_x: int,
+        nest_y: int,
+        *,
+        toward_nest: bool,
+    ) -> Cell | None:
+        """Pick the best trail-following neighbour with directional bias.
+
+        Real ants can determine trail polarity — they don't just walk
+        toward the strongest pheromone; they walk along the trail in
+        the right direction.  This method scores each neighbour by
+        combining trail pheromone strength with a directional bonus
+        that prefers movement toward or away from the nest.
+
+        The method checks TRAIL first; if no TRAIL is found on any
+        neighbour it falls back to RECRUITMENT pheromone.
+
+        Args:
+            neighbours: Adjacent cells to choose from.
+            pheromones: Multi-layer pheromone field.
+            nest_x: Colony nest X coordinate.
+            nest_y: Colony nest Y coordinate.
+            toward_nest: If True, prefer cells closer to the nest
+                (for carrying food home).  If False, prefer cells
+                farther from the nest (for gathering outbound).
+
+        Returns:
+            The best neighbouring cell, or None if no pheromone found.
+        """
+        from anthemyr.pheromones.fields import PheromoneType
+
+        # Current distance from nest
+        my_dist = abs(self.x - nest_x) + abs(self.y - nest_y)
+
+        for ptype in (PheromoneType.TRAIL, PheromoneType.RECRUITMENT):
+            best_cell: Cell | None = None
+            best_score = -999.0
+            has_pheromone = False
+
+            for cell in neighbours:
+                val = pheromones.read(ptype, cell.x, cell.y)
+                if val <= 0:
+                    continue
+                has_pheromone = True
+
+                # Directional bonus: +1 if moving the right way, -1 if wrong
+                cell_dist = abs(cell.x - nest_x) + abs(cell.y - nest_y)
+                if toward_nest:
+                    direction = 1.0 if cell_dist < my_dist else -0.5
+                else:
+                    direction = 1.0 if cell_dist > my_dist else -0.5
+
+                # Combine: pheromone strength (normalised) + direction bias
+                score = val + direction * 2.0
+                if score > best_score:
+                    best_score = score
+                    best_cell = cell
+
+            if has_pheromone:
+                return best_cell
+
+        return None
 
     @staticmethod
     def _best_pheromone_neighbour(

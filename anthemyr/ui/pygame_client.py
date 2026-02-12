@@ -27,6 +27,7 @@ _GRID_LINE = (40, 30, 20)
 _ANT_COLOURS: dict[Task, tuple[int, int, int]] = {
     Task.IDLE: (180, 180, 180),
     Task.FORAGING: (100, 200, 100),
+    Task.GATHERING: (255, 140, 40),
     Task.CARRYING_FOOD: (255, 200, 50),
     Task.BROOD_CARE: (200, 150, 255),
     Task.PATROLLING: (100, 150, 255),
