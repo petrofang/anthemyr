@@ -49,7 +49,7 @@ class SimulationConfig:
     max_age: int = 1000
     comfort_food_per_ant: float = 1.0
     max_starvation_damage: float = 0.04
-    consumption_per_ant: float = 0.02
+    consumption_per_ant: float = 0.005
 
     # Food regeneration (density-dependent 5x5 neighbourhood spread)
     base_regen_rate: float = 0.0005
