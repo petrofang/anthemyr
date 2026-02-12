@@ -44,17 +44,17 @@ class SimulationConfig:
 
     # Ant lifecycle
     max_age: int = 1000
-    comfort_food_per_ant: float = 2.0
+    comfort_food_per_ant: float = 1.0
     max_starvation_damage: float = 0.04
     consumption_per_ant: float = 0.02
 
     # Food regeneration
-    food_regen_rate: float = 0.01
+    food_regen_rate: float = 0.003
     food_cap: float = 5.0
 
     # Brood development
     egg_rate: float = 0.5
-    brood_mature_ticks: int = 80
+    brood_mature_ticks: int = 40
 
     pheromone_defaults: dict[str, dict[str, float]] = field(default_factory=dict)
 

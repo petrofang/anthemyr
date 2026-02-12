@@ -38,7 +38,7 @@ class Colony:
     colony_id: int
     nest_x: int
     nest_y: int
-    food_stores: float = 100.0
+    food_stores: float = 300.0
     brood_count: int = 0
     brood_progress: int = 0
     traits: Traits = field(default_factory=Traits)
@@ -129,12 +129,16 @@ class Colony:
         creating a natural cap: as population grows, food-per-ant drops
         and reproduction slows — a smooth density-dependent brake.
 
+        Below comfort but above 50% comfort, a trickle of eggs (10%
+        of normal rate) are still laid, preventing total reproductive
+        stall during mild stress.
+
         Each egg costs 1 food unit.
 
         Args:
             egg_rate: Maximum eggs per tick at very high food-per-ant.
             comfort_food_per_ant: Food-per-ant threshold below which
-                the queen stops laying.
+                reproduction slows dramatically.
             rng: Seeded random generator.
         """
         n = len(self.ants)
@@ -144,12 +148,19 @@ class Colony:
 
         food_per_ant = self.food_stores / n
 
-        if food_per_ant <= comfort_food_per_ant:
-            return  # colony is stressed — no reproduction
+        if food_per_ant <= comfort_food_per_ant * 0.5:
+            return  # colony is severely stressed — no reproduction
 
-        # Proportion above comfort: scales 0→∞ but we cap the egg output
-        excess_ratio = (food_per_ant - comfort_food_per_ant) / comfort_food_per_ant
-        expected_eggs = egg_rate * min(excess_ratio, 3.0)
+        if food_per_ant <= comfort_food_per_ant:
+            # Trickle reproduction: 10% rate when between 50%-100% comfort
+            stress_ratio = (food_per_ant - comfort_food_per_ant * 0.5) / (
+                comfort_food_per_ant * 0.5
+            )
+            expected_eggs = egg_rate * 0.1 * stress_ratio
+        else:
+            # Proportion above comfort: scales 0→∞ but we cap the egg output
+            excess_ratio = (food_per_ant - comfort_food_per_ant) / comfort_food_per_ant
+            expected_eggs = egg_rate * min(excess_ratio, 3.0)
 
         # Stochastic: fractional part becomes a probability
         whole = int(expected_eggs)

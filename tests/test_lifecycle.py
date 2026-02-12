@@ -204,17 +204,17 @@ class TestFoodRegeneration:
 class TestBroodDevelopment:
     """Tests for queen egg-laying and brood maturation."""
 
-    def test_no_eggs_when_low_food(self, rng: Generator) -> None:
-        """Colony doesn't lay eggs when food-per-ant is below comfort."""
+    def test_no_eggs_when_severely_stressed(self, rng: Generator) -> None:
+        """Colony doesn't lay eggs when food-per-ant is below 50% comfort."""
         colony = Colony(
             colony_id=0,
             nest_x=4,
             nest_y=4,
-            food_stores=5.0,
+            food_stores=2.0,
         )
-        colony.spawn_ant(rng)  # 1 ant, food_per_ant = 5.0
-        colony.spawn_ant(rng)  # 2 ants, food_per_ant = 2.5
-        colony.spawn_ant(rng)  # 3 ants, food_per_ant = 1.67 < 2.0
+        colony.spawn_ant(rng)  # 1 ant, food_per_ant = 2.0
+        colony.spawn_ant(rng)  # 2 ants, food_per_ant = 1.0
+        colony.spawn_ant(rng)  # 3 ants, food_per_ant = 0.67 < 1.0 (50% of 2.0)
         colony.lay_eggs(egg_rate=0.5, comfort_food_per_ant=2.0, rng=rng)
         assert colony.brood_count == 0
 
