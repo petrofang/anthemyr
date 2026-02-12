@@ -51,9 +51,9 @@ class SimulationConfig:
     max_starvation_damage: float = 0.04
     consumption_per_ant: float = 0.02
 
-    # Food regeneration (adjacency-based spread)
+    # Food regeneration (density-dependent 5x5 neighbourhood spread)
     base_regen_rate: float = 0.0005
-    spread_regen_rate: float = 0.02
+    spread_regen_rate: float = 0.08
     food_cap: float = 5.0
 
     # Brood development

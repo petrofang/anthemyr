@@ -70,6 +70,9 @@ class Ant:
     ) -> Ant:
         """Create an ant with thresholds sampled from colony trait distributions.
 
+        New ants start in FORAGING state so they immediately head out
+        to explore rather than wasting ticks in IDLE re-rolling.
+
         Args:
             x: Spawn column.
             y: Spawn row.
@@ -88,7 +91,7 @@ class Ant:
             "waste": float(rng.normal(traits.waste_threshold_mean, var)),
         }
         hp = float(rng.uniform(0.8, 1.2))
-        return cls(x=x, y=y, hp=hp, thresholds=thresholds)
+        return cls(x=x, y=y, task=Task.FORAGING, hp=hp, thresholds=thresholds)
 
     def update(
         self,
@@ -129,13 +132,15 @@ class Ant:
                     rng,
                 )
 
-        # Trail pheromone deposit while carrying food (breadcrumb home)
+        # Trail pheromone deposit while carrying food (breadcrumb home).
+        # Deposit 2.0 per step — returning ants reinforce the trail,
+        # guiding nest-mates toward productive food sources.
         if self.task == Task.CARRYING_FOOD:
             pheromones.deposit(
                 PheromoneType.TRAIL,
                 self.x,
                 self.y,
-                1.0,
+                2.0,
             )
 
         return food_deposited
@@ -164,24 +169,46 @@ class Ant:
         pheromones: PheromoneField,
         rng: Generator,
     ) -> None:
-        """FORAGING ants walk, biased toward trail pheromone, seeking food."""
+        """FORAGING ants walk, biased toward trail pheromone, seeking food.
+
+        When an ant finds a rich food source ("motherlode" — cell with
+        ≥2.0 food remaining after pickup), it deposits a heavy trail
+        pheromone (5.0) plus a RECRUITMENT burst, signalling other ants
+        to converge.  Moderate finds get a standard 3.0 trail deposit.
+        """
         from anthemyr.pheromones.fields import PheromoneType
 
         cell = world.cell_at(self.x, self.y)
 
         # Pick up food if present
         if cell.food > 0 and not cell.is_nest:
+            remaining_before = cell.food
             pickup = min(cell.food, 3.0)
             cell.food -= pickup
             self.carrying_food = pickup
             self.task = Task.CARRYING_FOOD
-            # Strong trail deposit at food source
-            pheromones.deposit(
-                PheromoneType.TRAIL,
-                self.x,
-                self.y,
-                3.0,
-            )
+
+            # Motherlode detection: rich source gets a heavy signal
+            if remaining_before >= 2.0:
+                pheromones.deposit(
+                    PheromoneType.TRAIL,
+                    self.x,
+                    self.y,
+                    5.0,
+                )
+                pheromones.deposit(
+                    PheromoneType.RECRUITMENT,
+                    self.x,
+                    self.y,
+                    3.0,
+                )
+            else:
+                pheromones.deposit(
+                    PheromoneType.TRAIL,
+                    self.x,
+                    self.y,
+                    3.0,
+                )
             return
 
         # Move: bias toward trail pheromone, otherwise random walk
@@ -223,9 +250,9 @@ class Ant:
     ) -> None:
         """Move to a neighbour, biased by pheromone concentration.
 
-        With probability 0.6, follows the strongest pheromone gradient;
-        otherwise picks a random neighbour.  This balance between
-        exploitation and exploration is key to emergent trail formation.
+        With probability 0.75, follows the strongest pheromone gradient;
+        otherwise picks a random neighbour.  The high follow-rate
+        ensures ants reliably exploit discovered food trails.
         """
         from anthemyr.pheromones.fields import PheromoneType
 
@@ -233,7 +260,7 @@ class Ant:
         if not neighbours:
             return
 
-        if rng.random() < 0.6 and isinstance(bias_type, PheromoneType):
+        if rng.random() < 0.75 and isinstance(bias_type, PheromoneType):
             best = self._best_pheromone_neighbour(
                 neighbours,
                 pheromones,

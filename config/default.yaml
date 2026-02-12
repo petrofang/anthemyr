@@ -17,9 +17,9 @@ comfort_food_per_ant: 1.0      # food-per-ant threshold: above = comfortable, be
 max_starvation_damage: 0.04    # max HP lost per ant per tick at zero food-per-ant
 consumption_per_ant: 0.02      # food consumed per ant per tick
 
-# Food regeneration
+# Food regeneration (density-dependent 5x5 neighbourhood spread)
 base_regen_rate: 0.0005    # tiny chance of spontaneous food (wind-blown seeds)
-spread_regen_rate: 0.02    # growth probability from neighbour food density
+spread_regen_rate: 0.08    # growth probability from neighbour food density²
 food_cap: 5.0              # max food a cell can hold
 
 # Brood development
@@ -30,8 +30,8 @@ brood_mature_ticks: 40     # ticks for brood to become an adult ant
 # Any type not listed here uses the PheromoneLayer defaults (0.1 / 0.05).
 pheromone_defaults:
   trail:
-    diffusion_rate: 0.12
-    evaporation_rate: 0.04
+    diffusion_rate: 0.15
+    evaporation_rate: 0.02
   alarm:
     diffusion_rate: 0.25
     evaporation_rate: 0.15

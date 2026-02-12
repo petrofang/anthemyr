@@ -139,21 +139,30 @@ class World:
         spread_rate: float = 0.02,
         food_cap: float = 5.0,
     ) -> None:
-        """Regrow food using adjacency-based spread from existing patches.
+        """Regrow food using density-dependent spread from existing patches.
 
-        Growth probability for each cell depends on the food density of
-        its neighbours, modelling natural plant propagation: seeds spread
-        from existing plants, creating coherent patches that grow outward
-        rather than random drizzle across the whole map.
+        Uses a 5x5 neighbourhood (24 cells) to calculate local food
+        density.  Inner-ring cells (8-connected) are weighted 1.0,
+        outer-ring cells (the next 16) are weighted 0.5.  Growth
+        probability scales with the *square* of normalised density,
+        so:
 
-        A small ``base_rate`` allows rare spontaneous growth (wind-blown
-        seeds, new species), while ``spread_rate`` drives the main
-        expansion from established food sources.
+        - Isolated food cells barely spread.
+        - Cells with a moderate ring of food (8 neighbours) grow
+          at a moderate rate.
+        - Cells surrounded on all 24 sides thicken *rapidly*.
+
+        This produces coherent, self-reinforcing food patches that
+        grow outward from their edges while becoming denser in the
+        centre — mimicking natural vegetation dynamics.
+
+        A small ``base_rate`` allows rare spontaneous growth.
 
         Args:
             rng: Seeded random generator.
             base_rate: Tiny probability of spontaneous food appearance.
-            spread_rate: Growth probability multiplier from neighbour food.
+            spread_rate: Growth probability multiplier from neighbour
+                density (applied to density²).
             food_cap: Maximum food a cell can hold.
         """
         # Snapshot current food to avoid order-dependent bias
@@ -164,23 +173,29 @@ class World:
                 if cell.is_nest or cell.food >= food_cap:
                     continue
 
-                # Sum food in 8-connected neighbours from snapshot
-                neighbour_food = 0.0
-                count = 0
-                for dy in (-1, 0, 1):
-                    for dx in (-1, 0, 1):
+                # Weighted food sum over 5x5 neighbourhood
+                weighted_food = 0.0
+                max_weight = 0.0
+                for dy in range(-2, 3):
+                    for dx in range(-2, 3):
                         if dx == 0 and dy == 0:
                             continue
                         nx, ny = x + dx, y + dy
                         if 0 <= nx < self.width and 0 <= ny < self.height:
-                            neighbour_food += food_snap[ny][nx]
-                            count += 1
+                            # Inner ring (8-connected): weight 1.0
+                            # Outer ring: weight 0.5
+                            w = 1.0 if abs(dx) <= 1 and abs(dy) <= 1 else 0.5
+                            weighted_food += food_snap[ny][nx] * w
+                            max_weight += w * food_cap
 
-                avg_neighbour = neighbour_food / max(count, 1)
-                growth_prob = base_rate + spread_rate * (avg_neighbour / food_cap)
+                # Normalised density 0..1
+                density = weighted_food / max_weight if max_weight > 0 else 0.0
+
+                # Quadratic scaling: dense patches grow fast,
+                # sparse edges barely grow
+                growth_prob = base_rate + spread_rate * density * density
 
                 if rng.random() < growth_prob:
-                    cell.food = min(
-                        food_cap,
-                        cell.food + float(rng.uniform(0.1, 0.5)),
-                    )
+                    # Amount added also scales with density
+                    amount = float(rng.uniform(0.1, 0.3)) + 0.3 * density
+                    cell.food = min(food_cap, cell.food + amount)

@@ -168,8 +168,10 @@ class TestFoodRegeneration:
     def test_food_spreads_from_existing(self, rng: Generator) -> None:
         """Food grows outward from cells that already have food."""
         world = World(width=8, height=8)
-        # Seed one cell with food — neighbours should grow
-        world.cell_at(4, 4).food = 5.0
+        # Seed a 3x3 cluster so the centre has full inner-ring density
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                world.cell_at(4 + dx, 4 + dy).food = 5.0
         total_before = sum(c.food for row in world.cells for c in row)
         for _ in range(100):
             world.regenerate_food(
@@ -180,8 +182,8 @@ class TestFoodRegeneration:
             )
         total_after = sum(c.food for row in world.cells for c in row)
         assert total_after > total_before
-        # Neighbour of seed should have food
-        assert world.cell_at(3, 4).food > 0 or world.cell_at(5, 4).food > 0
+        # Edge neighbour of cluster should have food
+        assert world.cell_at(2, 4).food > 0 or world.cell_at(6, 4).food > 0
 
     def test_no_spread_without_neighbours(self, rng: Generator) -> None:
         """Empty cells don't grow food without nearby food sources."""

@@ -46,7 +46,7 @@ class TestAnt:
 
     def test_default_state(self, rng: Generator) -> None:
         ant = Ant.from_traits(x=0, y=0, traits=Traits(), rng=rng)
-        assert ant.task == Task.IDLE
+        assert ant.task == Task.FORAGING
         assert ant.is_alive
         assert ant.age == 0
 
@@ -79,6 +79,7 @@ class TestAntForaging:
         world = World(width=8, height=8)
         phero = PheromoneField(width=8, height=8)
         ant = Ant.from_traits(x=4, y=4, traits=Traits(), rng=rng)
+        ant.task = Task.IDLE  # manually set IDLE to test transition
         ant.thresholds["food"] = 0.0  # zero threshold = always forages
         ant.update(world, phero, 4, 4, rng)
         assert ant.task == Task.FORAGING
