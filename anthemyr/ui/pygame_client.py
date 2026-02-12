@@ -26,9 +26,9 @@ _GRID_LINE = (40, 30, 20)
 # Ant colours by task
 _ANT_COLOURS: dict[Task, tuple[int, int, int]] = {
     Task.IDLE: (180, 180, 180),
-    Task.FORAGING: (100, 200, 100),
-    Task.GATHERING: (255, 140, 40),
-    Task.CARRYING_FOOD: (255, 200, 50),
+    Task.FORAGING: (255, 255, 0),
+    Task.GATHERING: (255, 0, 255),
+    Task.CARRYING_FOOD: (0, 255, 255),
     Task.BROOD_CARE: (200, 150, 255),
     Task.PATROLLING: (100, 150, 255),
     Task.FIGHTING: (255, 80, 80),
@@ -249,7 +249,7 @@ class PygameRenderer:
                 "",
             ]
             for task_name, count in sorted(task_counts.items()):
-                lines.append(f"  {task_name}: {count}")
+                lines.append((task_name, count))
 
         lines += [
             "",
@@ -259,7 +259,19 @@ class PygameRenderer:
             "ESC: quit",
         ]
 
-        for line in lines:
-            surf = self.font.render(line, True, (200, 200, 200))
+        for item in lines:
+            if isinstance(item, tuple):
+                task_name, count = item
+                # Find the task enum and get its colour
+                try:
+                    task = Task[task_name]
+                    colour = _ANT_COLOURS.get(task, (200, 200, 200))
+                except KeyError:
+                    colour = (200, 200, 200)
+                line = f"  {task_name}: {count}"
+                surf = self.font.render(line, True, colour)
+            else:
+                line = item
+                surf = self.font.render(line, True, (200, 200, 200))
             self.screen.blit(surf, (panel_x, y))
             y += 18
