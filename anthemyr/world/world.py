@@ -113,3 +113,30 @@ class World:
                 if 0 <= nx < self.width and 0 <= ny < self.height:
                     self.cells[ny][nx].is_nest = True
                     self.cells[ny][nx].food = 0.0
+
+    def regenerate_food(
+        self,
+        rng: Generator,
+        *,
+        regen_rate: float = 0.002,
+        food_cap: float = 5.0,
+    ) -> None:
+        """Slowly regrow food on non-nest cells each tick.
+
+        Each non-nest cell has a small probability of gaining a bit
+        of food, capped at ``food_cap``.
+
+        Args:
+            rng: Seeded random generator.
+            regen_rate: Probability per cell per tick of food growth.
+            food_cap: Maximum food a cell can hold.
+        """
+        for row in self.cells:
+            for cell in row:
+                if cell.is_nest:
+                    continue
+                if cell.food < food_cap and rng.random() < regen_rate:
+                    cell.food = min(
+                        food_cap,
+                        cell.food + float(rng.uniform(0.1, 0.5)),
+                    )

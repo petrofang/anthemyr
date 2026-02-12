@@ -28,6 +28,7 @@ class Colony:
         nest_y: Y coordinate of the nest entrance.
         food_stores: Accumulated food reserves.
         brood_count: Number of developing larvae/pupae.
+        brood_progress: Ticks accumulated toward next brood maturation.
         traits: Genetic trait profile for this colony.
         policies: Current policy-slider settings.
         ants: Living ant population.
@@ -39,6 +40,7 @@ class Colony:
     nest_y: int
     food_stores: float = 100.0
     brood_count: int = 0
+    brood_progress: int = 0
     traits: Traits = field(default_factory=Traits)
     policies: Policies = field(default_factory=Policies)
     ants: list[Ant] = field(default_factory=list)
@@ -70,6 +72,81 @@ class Colony:
         """
         consumption = len(self.ants) * amount_per_ant
         self.food_stores = max(0.0, self.food_stores - consumption)
+
+    def apply_starvation(self, damage: float) -> None:
+        """Damage all ants when the colony has no food.
+
+        Args:
+            damage: HP lost per ant this tick.
+        """
+        if self.food_stores > 0:
+            return
+        for ant in self.ants:
+            ant.hp -= damage
+
+    def apply_aging(self, max_age: int) -> None:
+        """Kill ants that have exceeded their maximum lifespan.
+
+        Args:
+            max_age: Age in ticks after which an ant dies.
+        """
+        for ant in self.ants:
+            if ant.age >= max_age:
+                ant.hp = 0.0
+
+    def lay_eggs(self, egg_rate: float, rng: Generator) -> None:
+        """Queen lays eggs proportional to surplus food stores.
+
+        Egg-laying costs food: each egg costs 1 unit.
+
+        Args:
+            egg_rate: Eggs per tick per unit of surplus food.
+            rng: Seeded random generator.
+        """
+        if self.food_stores <= 10.0:
+            return  # need a baseline before investing in brood
+
+        surplus = self.food_stores - 10.0
+        expected_eggs = surplus * egg_rate
+        # Stochastic: fractional part becomes a probability
+        whole = int(expected_eggs)
+        frac = expected_eggs - whole
+        eggs = whole + (1 if rng.random() < frac else 0)
+
+        # Cap eggs by available food (each egg costs 1 unit)
+        eggs = min(eggs, int(self.food_stores))
+        if eggs > 0:
+            self.brood_count += eggs
+            self.food_stores -= eggs
+
+    def develop_brood(
+        self,
+        mature_ticks: int,
+        rng: Generator,
+    ) -> int:
+        """Advance brood development; mature brood become new ants.
+
+        Brood progress accumulates each tick. When it reaches the
+        maturation threshold, one brood hatches into an adult ant.
+
+        Args:
+            mature_ticks: Ticks required for one brood to mature.
+            rng: Seeded random generator.
+
+        Returns:
+            Number of new ants hatched this tick.
+        """
+        if self.brood_count <= 0:
+            return 0
+
+        self.brood_progress += self.brood_count
+        hatched = 0
+        while self.brood_progress >= mature_ticks and self.brood_count > 0:
+            self.brood_progress -= mature_ticks
+            self.brood_count -= 1
+            self.spawn_ant(rng)
+            hatched += 1
+        return hatched
 
     def remove_dead(self) -> list[Ant]:
         """Remove and return ants that have died (hp <= 0 or starved).

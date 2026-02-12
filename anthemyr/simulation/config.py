@@ -23,6 +23,12 @@ class SimulationConfig:
         world_height: Number of grid rows.
         day_length: Ticks per full day/night cycle.
         initial_ants: Starting ant population per colony.
+        max_age: Maximum ant lifespan in ticks before death.
+        starvation_damage: HP lost per ant per tick when food is 0.
+        food_regen_rate: Probability per cell per tick of food regrowth.
+        food_cap: Maximum food a cell can hold.
+        egg_rate: Eggs laid per tick per unit of surplus food.
+        brood_mature_ticks: Ticks for brood to mature into an adult ant.
         pheromone_defaults: Per-type diffusion/evaporation overrides.
     """
 
@@ -31,6 +37,19 @@ class SimulationConfig:
     world_height: int = 64
     day_length: int = 100
     initial_ants: int = 50
+
+    # Ant lifecycle
+    max_age: int = 500
+    starvation_damage: float = 0.05
+
+    # Food regeneration
+    food_regen_rate: float = 0.002
+    food_cap: float = 5.0
+
+    # Brood development
+    egg_rate: float = 0.1
+    brood_mature_ticks: int = 100
+
     pheromone_defaults: dict[str, dict[str, float]] = field(default_factory=dict)
 
     @classmethod
@@ -56,5 +75,20 @@ class SimulationConfig:
             world_height=data.get("world_height", cls.world_height),
             day_length=data.get("day_length", cls.day_length),
             initial_ants=data.get("initial_ants", cls.initial_ants),
+            max_age=data.get("max_age", cls.max_age),
+            starvation_damage=data.get(
+                "starvation_damage",
+                cls.starvation_damage,
+            ),
+            food_regen_rate=data.get(
+                "food_regen_rate",
+                cls.food_regen_rate,
+            ),
+            food_cap=data.get("food_cap", cls.food_cap),
+            egg_rate=data.get("egg_rate", cls.egg_rate),
+            brood_mature_ticks=data.get(
+                "brood_mature_ticks",
+                cls.brood_mature_ticks,
+            ),
             pheromone_defaults=data.get("pheromone_defaults", {}),
         )

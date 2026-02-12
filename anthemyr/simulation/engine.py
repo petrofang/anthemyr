@@ -81,10 +81,19 @@ class SimulationEngine:
         2. Pheromones
         3. Ants
         4. Conflicts
-        5. Colony-level effects
+        5. Colony-level effects (food, aging, starvation, brood, death)
         """
+        from anthemyr.pheromones.fields import PheromoneType
+
         # 1. Update environment
         self.environment.update(self.world, self.rng)
+
+        # 1b. Regenerate food on the world grid
+        self.world.regenerate_food(
+            self.rng,
+            regen_rate=self.config.food_regen_rate,
+            food_cap=self.config.food_cap,
+        )
 
         # 2. Update pheromone fields
         update_field(self.pheromone_field)
@@ -107,7 +116,25 @@ class SimulationEngine:
         # 5. Colony-level effects
         for colony in self.colonies:
             colony.consume_food()
-            colony.remove_dead()
+            colony.apply_starvation(self.config.starvation_damage)
+            colony.apply_aging(self.config.max_age)
+
+            # Deposit DEATH pheromone at corpse sites before removing
+            dead = colony.remove_dead()
+            for ant in dead:
+                self.pheromone_field.deposit(
+                    PheromoneType.DEATH,
+                    ant.x,
+                    ant.y,
+                    5.0,
+                )
+
+            # Brood lifecycle
+            colony.lay_eggs(self.config.egg_rate, self.rng)
+            colony.develop_brood(
+                self.config.brood_mature_ticks,
+                self.rng,
+            )
 
         self.tick += 1
 
