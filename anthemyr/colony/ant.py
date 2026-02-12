@@ -262,10 +262,12 @@ class Ant:
 
         Movement strategy:
 
-        1. If standing on food, pick it up.  Only deposit a heavy trail
-           + RECRUITMENT for a "motherlode" (>=3.0 food remaining).
-           Small finds are picked up silently so they don't create
-           misleading trails to already-depleted sources.
+        1. If standing on food, pick it up.  A "rich source" is either
+           a motherlode (>=3.0 food remaining on this cell) OR a dense
+           cluster (3+ adjacent cells with food).  Rich sources get a
+           heavy trail + RECRUITMENT deposit so gatherers can find them.
+           Isolated small finds are picked up silently so they don't
+           create misleading trails to already-depleted sources.
         2. Check for RECRUITMENT pheromone -- a scout that has been
            searching unsuccessfully for a long time becomes increasingly
            susceptible to switching to GATHERING mode.
@@ -282,14 +284,18 @@ class Ant:
         # Pick up food if present
         if cell.food > 0 and not cell.is_nest:
             remaining_before = cell.food
+            is_motherlode = remaining_before >= _MOTHERLODE_THRESHOLD
+            is_dense_cluster = self._is_in_food_cluster(world, self.x, self.y)
+
             pickup = min(cell.food, _FOOD_PICKUP)
             cell.food -= pickup
             self.carrying_food = pickup
             self.task = Task.CARRYING_FOOD
             self._forage_ticks = 0  # reset: we found food
 
-            # Motherlode: rich source gets a heavy trail + recruitment
-            if remaining_before >= _MOTHERLODE_THRESHOLD:
+            # Rich source (motherlode OR dense cluster):
+            # heavy trail + recruitment so gatherers can exploit it
+            if is_motherlode or is_dense_cluster:
                 self._lay_trail = True
                 pheromones.deposit(
                     PheromoneType.TRAIL,
@@ -303,7 +309,7 @@ class Ant:
                     self.y,
                     _RECRUITMENT_DEPOSIT,
                 )
-            # Small finds: no trail deposit -- silent pickup
+            # Isolated small finds: no trail deposit -- silent pickup
             return
 
         # Track unsuccessful foraging time
