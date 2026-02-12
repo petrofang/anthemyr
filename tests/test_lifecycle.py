@@ -146,7 +146,8 @@ class TestFoodPressure:
             max_age=99999,
             comfort_food_per_ant=2.0,
             max_starvation_damage=0.5,
-            food_regen_rate=0.0,
+            base_regen_rate=0.0,
+            spread_regen_rate=0.0,
         )
         engine = SimulationEngine(config=cfg)
         colony = Colony(
@@ -164,21 +165,51 @@ class TestFoodPressure:
 class TestFoodRegeneration:
     """Tests for world food regeneration."""
 
-    def test_food_regrows(self, rng: Generator) -> None:
-        """Cells gain food over time when regen_rate > 0."""
+    def test_food_spreads_from_existing(self, rng: Generator) -> None:
+        """Food grows outward from cells that already have food."""
         world = World(width=8, height=8)
+        # Seed one cell with food — neighbours should grow
+        world.cell_at(4, 4).food = 5.0
         total_before = sum(c.food for row in world.cells for c in row)
-        # High rate to guarantee growth
         for _ in range(100):
-            world.regenerate_food(rng, regen_rate=1.0, food_cap=5.0)
+            world.regenerate_food(
+                rng,
+                base_rate=0.0,
+                spread_rate=1.0,
+                food_cap=5.0,
+            )
         total_after = sum(c.food for row in world.cells for c in row)
         assert total_after > total_before
+        # Neighbour of seed should have food
+        assert world.cell_at(3, 4).food > 0 or world.cell_at(5, 4).food > 0
+
+    def test_no_spread_without_neighbours(self, rng: Generator) -> None:
+        """Empty cells don't grow food without nearby food sources."""
+        world = World(width=4, height=4)
+        for _ in range(100):
+            world.regenerate_food(
+                rng,
+                base_rate=0.0,
+                spread_rate=0.5,
+                food_cap=5.0,
+            )
+        total = sum(c.food for row in world.cells for c in row)
+        assert total == 0.0
 
     def test_food_respects_cap(self, rng: Generator) -> None:
         """Food never exceeds the configured cap."""
         world = World(width=4, height=4)
+        # Seed all cells so spread is active
+        for row in world.cells:
+            for cell in row:
+                cell.food = 3.0
         for _ in range(1000):
-            world.regenerate_food(rng, regen_rate=1.0, food_cap=3.0)
+            world.regenerate_food(
+                rng,
+                base_rate=0.0,
+                spread_rate=1.0,
+                food_cap=3.0,
+            )
         for row in world.cells:
             for cell in row:
                 assert cell.food <= 3.0
@@ -186,19 +217,32 @@ class TestFoodRegeneration:
     def test_nest_cells_dont_regen(self, rng: Generator) -> None:
         """Nest cells should not accumulate food."""
         world = World(width=4, height=4)
+        # Seed neighbours with food
+        world.cell_at(1, 2).food = 5.0
+        world.cell_at(3, 2).food = 5.0
         world.mark_nest(2, 2, radius=1)
         for _ in range(100):
-            world.regenerate_food(rng, regen_rate=1.0, food_cap=5.0)
+            world.regenerate_food(
+                rng,
+                base_rate=1.0,
+                spread_rate=1.0,
+                food_cap=5.0,
+            )
         nest_cell = world.cell_at(2, 2)
         assert nest_cell.food == 0.0
 
-    def test_zero_regen_rate(self, rng: Generator) -> None:
-        """No food grows when regen_rate is 0."""
-        world = World(width=4, height=4)
-        for _ in range(100):
-            world.regenerate_food(rng, regen_rate=0.0, food_cap=5.0)
+    def test_spontaneous_growth(self, rng: Generator) -> None:
+        """Base rate allows rare spontaneous food on empty cells."""
+        world = World(width=8, height=8)
+        for _ in range(500):
+            world.regenerate_food(
+                rng,
+                base_rate=1.0,
+                spread_rate=0.0,
+                food_cap=5.0,
+            )
         total = sum(c.food for row in world.cells for c in row)
-        assert total == 0.0
+        assert total > 0
 
 
 class TestBroodDevelopment:
@@ -293,7 +337,8 @@ class TestBroodDevelopment:
             max_age=99999,
             comfort_food_per_ant=2.0,
             max_starvation_damage=0.05,
-            food_regen_rate=0.05,
+            base_regen_rate=0.05,
+            spread_regen_rate=0.1,
             food_cap=5.0,
             egg_rate=0.5,
             brood_mature_ticks=20,
@@ -327,7 +372,8 @@ class TestLifecycleDeterminism:
             max_age=100,
             comfort_food_per_ant=2.0,
             max_starvation_damage=0.05,
-            food_regen_rate=0.01,
+            base_regen_rate=0.01,
+            spread_regen_rate=0.05,
             food_cap=5.0,
             egg_rate=0.5,
             brood_mature_ticks=30,

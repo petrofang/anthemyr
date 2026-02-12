@@ -18,7 +18,8 @@ max_starvation_damage: 0.04    # max HP lost per ant per tick at zero food-per-a
 consumption_per_ant: 0.02      # food consumed per ant per tick
 
 # Food regeneration
-food_regen_rate: 0.003     # probability per non-nest cell per tick
+base_regen_rate: 0.0005    # tiny chance of spontaneous food (wind-blown seeds)
+spread_regen_rate: 0.02    # growth probability from neighbour food density
 food_cap: 5.0              # max food a cell can hold
 
 # Brood development

@@ -7,6 +7,7 @@ tick after individual ants have acted.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -125,9 +126,12 @@ class Colony:
     ) -> None:
         """Queen lays eggs when per-capita food exceeds comfort level.
 
-        Egg-laying scales with how far above comfort the colony is,
-        creating a natural cap: as population grows, food-per-ant drops
-        and reproduction slows — a smooth density-dependent brake.
+        Egg-laying uses a logarithmic curve ``ln(1 + excess_ratio)`` so
+        that reproduction ramps quickly from zero but saturates as food
+        surplus grows — mirroring real colony reproductive response.
+
+        A brood cap prevents eggs from exceeding the current population,
+        stopping runaway brood explosions.
 
         Below comfort but above 50% comfort, a trickle of eggs (10%
         of normal rate) are still laid, preventing total reproductive
@@ -146,6 +150,10 @@ class Colony:
         if n == 0 or self.food_stores < 1.0:
             return
 
+        # Brood cap: don't allow more brood than current population
+        if self.brood_count >= n:
+            return
+
         food_per_ant = self.food_stores / n
 
         if food_per_ant <= comfort_food_per_ant * 0.5:
@@ -158,9 +166,9 @@ class Colony:
             )
             expected_eggs = egg_rate * 0.1 * stress_ratio
         else:
-            # Proportion above comfort: scales 0→∞ but we cap the egg output
+            # Log curve: ramps fast then saturates — nature-inspired
             excess_ratio = (food_per_ant - comfort_food_per_ant) / comfort_food_per_ant
-            expected_eggs = egg_rate * min(excess_ratio, 3.0)
+            expected_eggs = egg_rate * math.log(1.0 + excess_ratio)
 
         # Stochastic: fractional part becomes a probability
         whole = int(expected_eggs)
@@ -169,6 +177,8 @@ class Colony:
 
         # Cap eggs by available food (each egg costs 1 unit)
         eggs = min(eggs, int(self.food_stores))
+        # Also cap by brood headroom
+        eggs = min(eggs, n - self.brood_count)
         if eggs > 0:
             self.brood_count += eggs
             self.food_stores -= eggs

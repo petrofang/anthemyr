@@ -135,24 +135,51 @@ class World:
         self,
         rng: Generator,
         *,
-        regen_rate: float = 0.002,
+        base_rate: float = 0.0005,
+        spread_rate: float = 0.02,
         food_cap: float = 5.0,
     ) -> None:
-        """Slowly regrow food on non-nest cells each tick.
+        """Regrow food using adjacency-based spread from existing patches.
 
-        Each non-nest cell has a small probability of gaining a bit
-        of food, capped at ``food_cap``.
+        Growth probability for each cell depends on the food density of
+        its neighbours, modelling natural plant propagation: seeds spread
+        from existing plants, creating coherent patches that grow outward
+        rather than random drizzle across the whole map.
+
+        A small ``base_rate`` allows rare spontaneous growth (wind-blown
+        seeds, new species), while ``spread_rate`` drives the main
+        expansion from established food sources.
 
         Args:
             rng: Seeded random generator.
-            regen_rate: Probability per cell per tick of food growth.
+            base_rate: Tiny probability of spontaneous food appearance.
+            spread_rate: Growth probability multiplier from neighbour food.
             food_cap: Maximum food a cell can hold.
         """
-        for row in self.cells:
-            for cell in row:
-                if cell.is_nest:
+        # Snapshot current food to avoid order-dependent bias
+        food_snap = [[cell.food for cell in row] for row in self.cells]
+
+        for y, row in enumerate(self.cells):
+            for x, cell in enumerate(row):
+                if cell.is_nest or cell.food >= food_cap:
                     continue
-                if cell.food < food_cap and rng.random() < regen_rate:
+
+                # Sum food in 8-connected neighbours from snapshot
+                neighbour_food = 0.0
+                count = 0
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < self.width and 0 <= ny < self.height:
+                            neighbour_food += food_snap[ny][nx]
+                            count += 1
+
+                avg_neighbour = neighbour_food / max(count, 1)
+                growth_prob = base_rate + spread_rate * (avg_neighbour / food_cap)
+
+                if rng.random() < growth_prob:
                     cell.food = min(
                         food_cap,
                         cell.food + float(rng.uniform(0.1, 0.5)),

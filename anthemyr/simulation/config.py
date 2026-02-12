@@ -29,7 +29,10 @@ class SimulationConfig:
         max_starvation_damage: Maximum HP lost per ant per tick when
             food-per-ant is zero.
         consumption_per_ant: Food consumed per ant per tick.
-        food_regen_rate: Probability per cell per tick of food regrowth.
+        base_regen_rate: Probability of spontaneous food regrowth per
+            empty cell per tick.
+        spread_regen_rate: Probability scaling for adjacency-driven food
+            spread from neighbouring cells.
         food_cap: Maximum food a cell can hold.
         egg_rate: Maximum eggs per tick at high food-per-ant.
         brood_mature_ticks: Ticks for brood to mature into an adult ant.
@@ -48,8 +51,9 @@ class SimulationConfig:
     max_starvation_damage: float = 0.04
     consumption_per_ant: float = 0.02
 
-    # Food regeneration
-    food_regen_rate: float = 0.003
+    # Food regeneration (adjacency-based spread)
+    base_regen_rate: float = 0.0005
+    spread_regen_rate: float = 0.02
     food_cap: float = 5.0
 
     # Brood development
@@ -94,9 +98,13 @@ class SimulationConfig:
                 "consumption_per_ant",
                 cls.consumption_per_ant,
             ),
-            food_regen_rate=data.get(
-                "food_regen_rate",
-                cls.food_regen_rate,
+            base_regen_rate=data.get(
+                "base_regen_rate",
+                cls.base_regen_rate,
+            ),
+            spread_regen_rate=data.get(
+                "spread_regen_rate",
+                cls.spread_regen_rate,
             ),
             food_cap=data.get("food_cap", cls.food_cap),
             egg_rate=data.get("egg_rate", cls.egg_rate),

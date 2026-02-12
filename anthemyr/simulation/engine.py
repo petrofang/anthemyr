@@ -91,7 +91,8 @@ class SimulationEngine:
         # 1b. Regenerate food on the world grid
         self.world.regenerate_food(
             self.rng,
-            regen_rate=self.config.food_regen_rate,
+            base_rate=self.config.base_regen_rate,
+            spread_rate=self.config.spread_regen_rate,
             food_cap=self.config.food_cap,
         )
 
