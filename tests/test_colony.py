@@ -98,6 +98,7 @@ class TestAntForaging:
         world = World(width=8, height=8)
         world.mark_nest(4, 4, radius=1)
         phero = PheromoneField(width=8, height=8)
+        # Non-motherlode carrying ant (no _lay_trail) reverts to FORAGING
         ant = Ant(x=4, y=4, task=Task.CARRYING_FOOD, carrying_food=1.0)
         food = ant.update(world, phero, 4, 4, rng)
         assert ant.task == Task.FORAGING
@@ -164,3 +165,126 @@ class TestAntForaging:
         assert len(dead) == 2
         assert all(not a.is_alive for a in dead)
         assert all(a.is_alive for a in default_colony.ants)
+
+
+class TestGathering:
+    """Tests for the GATHERING task mode."""
+
+    def test_motherlode_forager_becomes_gatherer(self, rng: Generator) -> None:
+        """After depositing motherlode food at nest, ant becomes GATHERING."""
+        world = World(width=8, height=8)
+        world.mark_nest(4, 4, radius=1)
+        phero = PheromoneField(width=8, height=8)
+        ant = Ant(
+            x=4,
+            y=4,
+            task=Task.CARRYING_FOOD,
+            carrying_food=3.0,
+            heading=0.0,
+            _lay_trail=True,
+        )
+        ant.update(world, phero, 4, 4, rng)
+        assert ant.task == Task.GATHERING
+        assert ant.carrying_food == 0.0
+
+    def test_small_find_forager_stays_foraging(self, rng: Generator) -> None:
+        """After depositing non-motherlode food, ant reverts to FORAGING."""
+        world = World(width=8, height=8)
+        world.mark_nest(4, 4, radius=1)
+        phero = PheromoneField(width=8, height=8)
+        ant = Ant(
+            x=4,
+            y=4,
+            task=Task.CARRYING_FOOD,
+            carrying_food=1.0,
+            heading=0.0,
+            _lay_trail=False,
+        )
+        ant.update(world, phero, 4, 4, rng)
+        assert ant.task == Task.FORAGING
+
+    def test_gatherer_picks_up_food(self, rng: Generator) -> None:
+        """GATHERING ant picks up food and switches to CARRYING_FOOD."""
+        world = World(width=8, height=8)
+        world.cell_at(3, 3).food = 5.0
+        phero = PheromoneField(width=8, height=8)
+        ant = Ant(x=3, y=3, task=Task.GATHERING, _lay_trail=True)
+        ant.update(world, phero, 4, 4, rng)
+        assert ant.task == Task.CARRYING_FOOD
+        assert ant.carrying_food > 0
+
+    def test_gatherer_patience_expires(self, rng: Generator) -> None:
+        """GATHERING ant with zero patience reverts to FORAGING in place."""
+        world = World(width=8, height=8)
+        phero = PheromoneField(width=8, height=8)
+        ant = Ant(
+            x=2,
+            y=2,
+            task=Task.GATHERING,
+            _gather_patience=1,
+            _lay_trail=True,
+        )
+        ant.update(world, phero, 4, 4, rng)
+        assert ant.task == Task.FORAGING
+        assert not ant._lay_trail
+
+    def test_gatherer_reinforces_trail(self, rng: Generator) -> None:
+        """GATHERING ant deposits trail pheromone at lower rate while walking."""
+        world = World(width=8, height=8)
+        phero = PheromoneField(width=8, height=8)
+        ant = Ant(
+            x=3,
+            y=3,
+            task=Task.GATHERING,
+            _lay_trail=True,
+            _gather_patience=60,
+        )
+        ant.update(world, phero, 4, 4, rng)
+        # Ant is still gathering and moved -- check trail deposit at new pos
+        assert ant.task == Task.GATHERING
+        trail = phero.read(PheromoneType.TRAIL, ant.x, ant.y)
+        assert trail > 0  # trail deposited
+        assert trail <= 1.0  # at the lower gatherer rate (1.0), not scout (2.0)
+
+    def test_recruitment_pheromone_recruits_idle_ant(
+        self,
+        rng: Generator,
+    ) -> None:
+        """Strong RECRUITMENT pheromone can switch an IDLE ant to GATHERING."""
+        world = World(width=8, height=8)
+        phero = PheromoneField(width=8, height=8)
+        # Deposit strong recruitment signal
+        phero.deposit(PheromoneType.RECRUITMENT, 4, 4, 20.0)
+        ant = Ant(x=4, y=4, task=Task.IDLE)
+        ant.thresholds["food"] = 0.01  # very eager ant
+        # Run several ticks to account for probabilistic switching
+        switched = False
+        for _ in range(20):
+            ant.task = Task.IDLE
+            ant.update(world, phero, 4, 4, rng)
+            if ant.task == Task.GATHERING:
+                switched = True
+                break
+        assert switched, "Idle ant should eventually respond to recruitment"
+
+    def test_recruitment_pheromone_recruits_foraging_ant(
+        self,
+        rng: Generator,
+    ) -> None:
+        """FORAGING ant near recruitment pheromone can switch to GATHERING."""
+        world = World(width=8, height=8)
+        phero = PheromoneField(width=8, height=8)
+        phero.deposit(PheromoneType.RECRUITMENT, 3, 3, 20.0)
+        ant = Ant(x=3, y=3, task=Task.FORAGING)
+        ant.thresholds["food"] = 0.01
+        ant._forage_ticks = 50  # long unsuccessful search = more susceptible
+        switched = False
+        for _ in range(20):
+            ant.task = Task.FORAGING
+            ant.x, ant.y = 3, 3
+            ant._forage_ticks = 50
+            ant.update(world, phero, 4, 4, rng)
+            if ant.task == Task.GATHERING:
+                switched = True
+                break
+        assert switched, "Foraging ant should respond to recruitment"

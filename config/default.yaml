@@ -11,19 +11,19 @@ world_height: 64
 day_length: 100  # ticks per full day/night cycle
 
 # Colony
-initial_ants: 50
-max_age: 1000                  # ticks before an ant dies of old age
+initial_ants: 20
+max_age: 10000                 # ticks before an ant dies of old age
 comfort_food_per_ant: 1.0      # food-per-ant threshold: above = comfortable, below = pressure
-max_starvation_damage: 0.04    # max HP lost per ant per tick at zero food-per-ant
-consumption_per_ant: 0.005     # food consumed per ant per tick (low: ants are efficient foragers)
+max_starvation_damage: 0.02    # max HP lost per ant per tick at zero food-per-ant
+consumption_per_ant: 0.002     # food consumed per ant per tick (low: ants are efficient foragers)
 
 # Food regeneration (density-dependent 5x5 neighbourhood spread)
-base_regen_rate: 0.0005    # tiny chance of spontaneous food (wind-blown seeds)
+base_regen_rate: 0.0002    # tiny chance of spontaneous food (wind-blown seeds)
 spread_regen_rate: 0.08    # growth probability from neighbour food density²
-food_cap: 5.0              # max food a cell can hold
+food_cap: 10.0              # max food a cell can hold
 
 # Brood development
-egg_rate: 0.5              # max eggs per tick at high food-per-ant
+egg_rate: 0.2              # max eggs per tick at high food-per-ant
 brood_mature_ticks: 40     # ticks for brood to become an adult ant
 
 # Per-pheromone-type overrides for diffusion and evaporation rates.

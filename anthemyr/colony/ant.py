@@ -16,6 +16,12 @@ Key movement model:
 - **Return-trip memory**: after delivering food to the nest the ant
   reverses its heading to walk back toward the food source it just
   exploited, rather than starting a fresh random search.
+- **Gathering mode**: successful foragers that find a motherlode
+  transition to GATHERING after depositing food at the nest.  Gatherers
+  follow TRAIL/RECRUITMENT pheromone at 75% and reinforce the trail.
+  Other ants (scouts and idle) can be recruited into GATHERING by
+  strong RECRUITMENT pheromone, modulated by personal thresholds and
+  how long they have been searching unsuccessfully.
 """
 
 from __future__ import annotations
@@ -37,6 +43,10 @@ if TYPE_CHECKING:
 
 _FORAGE_FOLLOW_RATE = 0.40  # trail-follow probability while searching
 _CARRY_FOLLOW_RATE = 0.75  # trail-follow probability while carrying food
+_GATHER_FOLLOW_RATE = 0.75  # trail/recruitment follow while gathering
+_GATHER_TRAIL_DEPOSIT = 1.0  # trail reinforcement per step while gathering
+_GATHER_PATIENCE_MAX = 60  # ticks a gatherer walks without food before giving up
+_RECRUITMENT_SWITCH_BASE = 0.3  # base recruitment-response probability
 _HEADING_NOISE_STD = 0.5  # ~30 degrees Gaussian noise on heading
 _TERRITORY_DEPOSIT = 0.3  # explored-area mark per step
 _MOTHERLODE_THRESHOLD = 3.0  # food remaining to count as "motherlode"
@@ -51,6 +61,7 @@ class Task(Enum):
 
     IDLE = auto()
     FORAGING = auto()
+    GATHERING = auto()
     CARRYING_FOOD = auto()
     BROOD_CARE = auto()
     PATROLLING = auto()
@@ -73,6 +84,12 @@ class Ant:
             pi/2 = south).  Used for correlated random walk.
         thresholds: Per-stimulus response thresholds.  Lower values mean
             the ant is more likely to respond to that stimulus.
+        _lay_trail: Whether to deposit trail while carrying/gathering.
+        _gather_patience: Ticks remaining before a gatherer gives up
+            and reverts to scouting from its current position.
+        _forage_ticks: Consecutive ticks spent foraging without finding
+            food.  Higher values make the ant more susceptible to
+            recruitment pheromone.
     """
 
     x: int
@@ -83,6 +100,8 @@ class Ant:
     carrying_food: float = 0.0
     heading: float = 0.0
     _lay_trail: bool = False
+    _gather_patience: int = _GATHER_PATIENCE_MAX
+    _forage_ticks: int = 0
     thresholds: dict[str, float] = field(default_factory=dict)
 
     @property
@@ -161,6 +180,8 @@ class Ant:
                 self._decide_to_forage(world, pheromones, rng)
             case Task.FORAGING:
                 self._forage(world, pheromones, rng)
+            case Task.GATHERING:
+                self._gather(world, pheromones, rng)
             case Task.CARRYING_FOOD:
                 food_deposited = self._carry_food_home(
                     world,
@@ -180,6 +201,16 @@ class Ant:
                 _TRAIL_DEPOSIT_PER_STEP,
             )
 
+        # Gatherers reinforce the trail at a lower rate so successful
+        # routes stay alive while the food source remains productive.
+        if self.task == Task.GATHERING and self._lay_trail:
+            pheromones.deposit(
+                PheromoneType.TRAIL,
+                self.x,
+                self.y,
+                _GATHER_TRAIL_DEPOSIT,
+            )
+
         return food_deposited
 
     # -- Private behaviour methods --
@@ -190,11 +221,32 @@ class Ant:
         pheromones: PheromoneField,
         rng: Generator,
     ) -> None:
-        """IDLE ants evaluate whether to start foraging.
+        """IDLE ants evaluate whether to start foraging or gathering.
 
         An ant starts foraging when a random stimulus draw exceeds
         its food-response threshold (lower threshold = more eager).
+        If strong RECRUITMENT pheromone is present at the ant's cell,
+        it may skip straight to GATHERING instead.
         """
+        from anthemyr.pheromones.fields import PheromoneType
+
+        # Check for recruitment pheromone first -- strong signal can
+        # pull an idle ant directly into gathering mode.
+        recruitment = pheromones.read(
+            PheromoneType.RECRUITMENT,
+            self.x,
+            self.y,
+        )
+        if recruitment > 0:
+            threshold = self.thresholds.get("food", 0.5)
+            # Sigmoid-like response: strong signal + low threshold = likely
+            prob = recruitment / (recruitment + threshold)
+            if rng.random() < prob:
+                self.task = Task.GATHERING
+                self._lay_trail = True
+                self._gather_patience = _GATHER_PATIENCE_MAX
+                return
+
         stimulus = float(rng.random())
         threshold = self.thresholds.get("food", 0.5)
         if stimulus > threshold:
@@ -214,10 +266,13 @@ class Ant:
            + RECRUITMENT for a "motherlode" (>=3.0 food remaining).
            Small finds are picked up silently so they don't create
            misleading trails to already-depleted sources.
-        2. Otherwise move using ``_move_foraging`` -- a correlated
+        2. Check for RECRUITMENT pheromone -- a scout that has been
+           searching unsuccessfully for a long time becomes increasingly
+           susceptible to switching to GATHERING mode.
+        3. Otherwise move using ``_move_foraging`` -- a correlated
            random walk biased slightly toward trail pheromone (40%)
            and repelled by TERRITORY (explored-area) pheromone.
-        3. Deposit a light TERRITORY mark so other scouts avoid
+        4. Deposit a light TERRITORY mark so other scouts avoid
            re-searching this cell.
         """
         from anthemyr.pheromones.fields import PheromoneType
@@ -231,6 +286,7 @@ class Ant:
             cell.food -= pickup
             self.carrying_food = pickup
             self.task = Task.CARRYING_FOOD
+            self._forage_ticks = 0  # reset: we found food
 
             # Motherlode: rich source gets a heavy trail + recruitment
             if remaining_before >= _MOTHERLODE_THRESHOLD:
@@ -249,6 +305,37 @@ class Ant:
                 )
             # Small finds: no trail deposit -- silent pickup
             return
+
+        # Track unsuccessful foraging time
+        self._forage_ticks += 1
+
+        # Check recruitment pheromone -- fuzzy switch to GATHERING.
+        # Probability increases with:
+        #   - stronger recruitment signal
+        #   - longer time spent searching unsuccessfully (_forage_ticks)
+        #   - lower personal food threshold (more eager ant)
+        recruitment = pheromones.read(
+            PheromoneType.RECRUITMENT,
+            self.x,
+            self.y,
+        )
+        if recruitment > 0:
+            threshold = self.thresholds.get("food", 0.5)
+            # Urgency ramps up: after 30 ticks of fruitless search the
+            # ant is twice as susceptible, after 60 ticks three times.
+            urgency = 1.0 + self._forage_ticks / 30.0
+            prob = (
+                _RECRUITMENT_SWITCH_BASE
+                * urgency
+                * recruitment
+                / (recruitment + threshold)
+            )
+            if rng.random() < prob:
+                self.task = Task.GATHERING
+                self._lay_trail = True
+                self._gather_patience = _GATHER_PATIENCE_MAX
+                self._forage_ticks = 0
+                return
 
         # Deposit explored-area mark before moving
         pheromones.deposit(
@@ -271,9 +358,14 @@ class Ant:
     ) -> float:
         """CARRYING_FOOD ants walk toward the nest and deposit food.
 
-        After depositing, the ant reverses its heading to walk back
-        toward the food source it just exploited (return-trip memory)
-        rather than starting a fresh random search from the nest.
+        After depositing, the ant transitions based on how it found
+        the food:
+
+        - **Motherlode** (``_lay_trail`` is True): switch to GATHERING
+          and reverse heading to walk back toward the food source,
+          exploiting the trail it just laid.
+        - **Small find**: revert to FORAGING and start a fresh scout
+          walk.
 
         Returns:
             Amount of food deposited (> 0 only when reaching nest).
@@ -282,15 +374,132 @@ class Ant:
         if world.cell_at(self.x, self.y).is_nest:
             deposited = self.carrying_food
             self.carrying_food = 0.0
-            self.task = Task.FORAGING
-            self._lay_trail = False
             # Reverse heading to walk back toward the food source
             self.heading = (self.heading + math.pi) % (2.0 * math.pi)
+
+            if self._lay_trail:
+                # Successful motherlode trip -- become a gatherer
+                self.task = Task.GATHERING
+                self._gather_patience = _GATHER_PATIENCE_MAX
+                # Keep _lay_trail True so we reinforce trail on the way
+            else:
+                # Small find -- go back to scouting
+                self.task = Task.FORAGING
             return deposited
 
         # Move toward nest with some randomness
         self._move_toward(world, nest_x, nest_y, rng)
         return 0.0
+
+    def _gather(
+        self,
+        world: World,
+        pheromones: PheromoneField,
+        rng: Generator,
+    ) -> None:
+        """GATHERING ants exploit a known food source via pheromone trails.
+
+        Unlike foraging scouts, gatherers follow TRAIL and RECRUITMENT
+        pheromone at a high rate (75%) to efficiently reach a food
+        source discovered by a scout.  They reinforce the trail as
+        they walk (handled in ``update()``).
+
+        If the gatherer finds food it picks it up, resets its patience
+        counter, and switches to CARRYING_FOOD.  If it walks for
+        ``_GATHER_PATIENCE_MAX`` ticks without finding food (the source
+        was depleted or the trail evaporated), it gives up and reverts
+        to FORAGING from its *current position* -- becoming a scout
+        that starts searching from where it expected the food to be,
+        rather than retreating to the nest.
+        """
+        from anthemyr.pheromones.fields import PheromoneType
+
+        cell = world.cell_at(self.x, self.y)
+
+        # Found food -- pick it up
+        if cell.food > 0 and not cell.is_nest:
+            remaining_before = cell.food
+            pickup = min(cell.food, _FOOD_PICKUP)
+            cell.food -= pickup
+            self.carrying_food = pickup
+            self.task = Task.CARRYING_FOOD
+            self._gather_patience = _GATHER_PATIENCE_MAX
+
+            # Refresh recruitment signal if still a motherlode
+            if remaining_before >= _MOTHERLODE_THRESHOLD:
+                self._lay_trail = True
+                pheromones.deposit(
+                    PheromoneType.TRAIL,
+                    self.x,
+                    self.y,
+                    _TRAIL_DEPOSIT_AT_FOOD,
+                )
+                pheromones.deposit(
+                    PheromoneType.RECRUITMENT,
+                    self.x,
+                    self.y,
+                    _RECRUITMENT_DEPOSIT,
+                )
+            else:
+                # Source nearly depleted -- stop laying trail
+                self._lay_trail = False
+            return
+
+        # No food here -- count down patience
+        self._gather_patience -= 1
+        if self._gather_patience <= 0:
+            # Give up: revert to scouting from current position
+            self.task = Task.FORAGING
+            self._lay_trail = False
+            self._forage_ticks = 0
+            return
+
+        # Move toward food source via pheromone trail
+        self._move_gathering(world, pheromones, rng)
+
+    def _move_gathering(
+        self,
+        world: World,
+        pheromones: PheromoneField,
+        rng: Generator,
+    ) -> None:
+        """Move as a gatherer: high trail-follow rate with recruitment fallback.
+
+        Decision order:
+
+        1. With probability ``_GATHER_FOLLOW_RATE`` (75%), follow the
+           strongest TRAIL pheromone.  If no TRAIL is nearby, try
+           RECRUITMENT pheromone instead.
+        2. Otherwise, fall back to a correlated random walk so the
+           gatherer isn't permanently stuck if the trail evaporates.
+        """
+        from anthemyr.pheromones.fields import PheromoneType
+
+        neighbours = world.neighbours(self.x, self.y)
+        if not neighbours:
+            return
+
+        # 1. High-rate pheromone following (75%)
+        if rng.random() < _GATHER_FOLLOW_RATE:
+            # Prefer TRAIL, fall back to RECRUITMENT
+            best = self._best_pheromone_neighbour(
+                neighbours,
+                pheromones,
+                PheromoneType.TRAIL,
+            )
+            if best is None:
+                best = self._best_pheromone_neighbour(
+                    neighbours,
+                    pheromones,
+                    PheromoneType.RECRUITMENT,
+                )
+            if best is not None:
+                self._step_to(best)
+                return
+
+        # 2. Correlated walk fallback (no territory avoidance --
+        #    gatherers don't care about explored area)
+        self._correlated_step(world, pheromones, rng)
 
     def _move_foraging(
         self,
