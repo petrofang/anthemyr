@@ -109,12 +109,45 @@ class TestAntForaging:
         rng: Generator,
     ) -> None:
         world = World(width=8, height=8)
-        world.cell_at(3, 4).food = 5.0
+        world.cell_at(3, 4).food = 5.0  # >= motherlode threshold (3.0)
         phero = PheromoneField(width=8, height=8)
         ant = Ant(x=3, y=4, task=Task.FORAGING)
         ant.update(world, phero, 4, 4, rng)
-        # Ant picked up food and deposited trail pheromone
+        # Ant picked up food from a motherlode and deposited trail pheromone
         assert phero.read(PheromoneType.TRAIL, 3, 4) > 0
+
+    def test_small_food_no_trail(self, rng: Generator) -> None:
+        """Small food sources don't deposit trail pheromone."""
+        world = World(width=8, height=8)
+        world.cell_at(3, 4).food = 1.5  # below motherlode threshold
+        phero = PheromoneField(width=8, height=8)
+        ant = Ant(x=3, y=4, task=Task.FORAGING)
+        ant.update(world, phero, 4, 4, rng)
+        assert ant.task == Task.CARRYING_FOOD
+        assert phero.read(PheromoneType.TRAIL, 3, 4) == 0.0
+
+    def test_ant_has_heading(self, rng: Generator) -> None:
+        """Ants from_traits have a random heading."""
+        ant = Ant.from_traits(x=0, y=0, traits=Traits(), rng=rng)
+        assert 0.0 <= ant.heading < 2.0 * 3.15  # approx 2*pi
+
+    def test_return_trip_reverses_heading(self, rng: Generator) -> None:
+        """After depositing food, ant reverses heading."""
+        import math
+
+        world = World(width=8, height=8)
+        world.mark_nest(4, 4, radius=1)
+        phero = PheromoneField(width=8, height=8)
+        ant = Ant(
+            x=4,
+            y=4,
+            task=Task.CARRYING_FOOD,
+            carrying_food=1.0,
+            heading=0.0,
+        )
+        ant.update(world, phero, 4, 4, rng)
+        # Heading should be reversed (0 -> pi)
+        assert abs(ant.heading - math.pi) < 0.01
 
     def test_ant_ages_each_tick(self, rng: Generator) -> None:
         world = World(width=8, height=8)

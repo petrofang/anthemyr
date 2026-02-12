@@ -51,9 +51,19 @@ def diffuse(layer: PheromoneLayer) -> None:
 def update_field(field: PheromoneField) -> None:
     """Run one tick of evaporation + diffusion on all layers.
 
+    TRAIL pheromone skips diffusion entirely -- it should fade in
+    place (evaporate) rather than spreading into an amorphous cloud.
+    This preserves the linear trail shape that carrying ants deposit,
+    creating clear directional signals rather than noisy blobs.
+
+    All other pheromone types receive both evaporation and diffusion.
+
     Args:
         field: The complete pheromone field to update.
     """
+    from anthemyr.pheromones.fields import PheromoneType
+
     for layer in field.layers.values():
         evaporate(layer)
-        diffuse(layer)
+        if layer.ptype is not PheromoneType.TRAIL:
+            diffuse(layer)

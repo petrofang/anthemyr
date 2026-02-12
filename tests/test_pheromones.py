@@ -68,7 +68,7 @@ class TestDiffusion:
         total_before = grid.sum()
 
         layer = PheromoneLayer(
-            ptype=PheromoneType.TRAIL,
+            ptype=PheromoneType.ALARM,
             grid=grid,
             diffusion_rate=0.2,
             evaporation_rate=0.0,
@@ -76,7 +76,7 @@ class TestDiffusion:
         diffuse(layer)
         total_after = layer.grid.sum()
         assert np.isclose(total_before, total_after), (
-            f"Diffusion changed total: {total_before} → {total_after}"
+            f"Diffusion changed total: {total_before} -> {total_after}"
         )
 
     def test_diffusion_spreads(self) -> None:
@@ -84,7 +84,7 @@ class TestDiffusion:
         grid = np.zeros((8, 8), dtype=np.float64)
         grid[4, 4] = 10.0
         layer = PheromoneLayer(
-            ptype=PheromoneType.TRAIL,
+            ptype=PheromoneType.ALARM,
             grid=grid,
             diffusion_rate=0.2,
             evaporation_rate=0.0,
@@ -95,3 +95,16 @@ class TestDiffusion:
         assert layer.grid[5, 4] > 0
         assert layer.grid[4, 3] > 0
         assert layer.grid[4, 5] > 0
+
+    def test_trail_skips_diffusion(self) -> None:
+        """TRAIL pheromone should not diffuse -- it evaporates in place."""
+        from anthemyr.pheromones.diffusion import update_field
+
+        pf = PheromoneField(width=8, height=8)
+        pf.deposit(PheromoneType.TRAIL, 4, 4, 10.0)
+        update_field(pf)
+        # Neighbours should have zero TRAIL (no diffusion)
+        assert pf.read(PheromoneType.TRAIL, 3, 4) == 0.0
+        assert pf.read(PheromoneType.TRAIL, 5, 4) == 0.0
+        # Centre should have evaporated but still be present
+        assert 0 < pf.read(PheromoneType.TRAIL, 4, 4) < 10.0

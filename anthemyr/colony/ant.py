@@ -1,12 +1,26 @@
-"""Ant — individual agent with local decision-making.
+"""Ant -- individual agent with local decision-making.
 
 Each Ant carries internal response thresholds that determine when it
 switches between tasks.  Behaviour emerges from the interplay of these
 thresholds with the local pheromone landscape and environmental stimuli.
+
+Key movement model:
+
+- **Correlated random walk**: each ant maintains a *heading* (radians)
+  and biases movement toward it with Gaussian angular noise.  This
+  produces directional persistence and much better area coverage than
+  an uncorrelated random walk.
+- **Explored pheromone**: foraging ants deposit a light TERRITORY mark
+  each step.  Movement is repelled by TERRITORY so scouts naturally
+  spread out and avoid re-searching the same ground.
+- **Return-trip memory**: after delivering food to the nest the ant
+  reverses its heading to walk back toward the food source it just
+  exploited, rather than starting a fresh random search.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING
@@ -18,6 +32,18 @@ if TYPE_CHECKING:
     from anthemyr.pheromones.fields import PheromoneField
     from anthemyr.world.cell import Cell
     from anthemyr.world.world import World
+
+# -- Constants ---------------------------------------------------------------
+
+_FORAGE_FOLLOW_RATE = 0.40  # trail-follow probability while searching
+_CARRY_FOLLOW_RATE = 0.75  # trail-follow probability while carrying food
+_HEADING_NOISE_STD = 0.5  # ~30 degrees Gaussian noise on heading
+_TERRITORY_DEPOSIT = 0.3  # explored-area mark per step
+_MOTHERLODE_THRESHOLD = 3.0  # food remaining to count as "motherlode"
+_TRAIL_DEPOSIT_AT_FOOD = 5.0
+_RECRUITMENT_DEPOSIT = 3.0
+_TRAIL_DEPOSIT_PER_STEP = 2.0
+_FOOD_PICKUP = 3.0
 
 
 class Task(Enum):
@@ -43,6 +69,8 @@ class Ant:
         hp: Hit-points / vitality (dies at 0).
         age: Ticks since birth.
         carrying_food: Amount of food currently carried.
+        heading: Current movement direction in radians (0 = east,
+            pi/2 = south).  Used for correlated random walk.
         thresholds: Per-stimulus response thresholds.  Lower values mean
             the ant is more likely to respond to that stimulus.
     """
@@ -53,6 +81,8 @@ class Ant:
     hp: float = 1.0
     age: int = 0
     carrying_food: float = 0.0
+    heading: float = 0.0
+    _lay_trail: bool = False
     thresholds: dict[str, float] = field(default_factory=dict)
 
     @property
@@ -70,8 +100,8 @@ class Ant:
     ) -> Ant:
         """Create an ant with thresholds sampled from colony trait distributions.
 
-        New ants start in FORAGING state so they immediately head out
-        to explore rather than wasting ticks in IDLE re-rolling.
+        New ants start in FORAGING state with a random heading so they
+        immediately scatter outward in different directions.
 
         Args:
             x: Spawn column.
@@ -80,7 +110,7 @@ class Ant:
             rng: Seeded random generator.
 
         Returns:
-            A new Ant instance with randomised thresholds.
+            A new Ant instance with randomised thresholds and heading.
         """
         mean = traits.foraging_threshold_mean
         var = traits.threshold_variance
@@ -91,7 +121,15 @@ class Ant:
             "waste": float(rng.normal(traits.waste_threshold_mean, var)),
         }
         hp = float(rng.uniform(0.8, 1.2))
-        return cls(x=x, y=y, task=Task.FORAGING, hp=hp, thresholds=thresholds)
+        heading = float(rng.uniform(0.0, 2.0 * math.pi))
+        return cls(
+            x=x,
+            y=y,
+            task=Task.FORAGING,
+            hp=hp,
+            heading=heading,
+            thresholds=thresholds,
+        )
 
     def update(
         self,
@@ -133,14 +171,13 @@ class Ant:
                 )
 
         # Trail pheromone deposit while carrying food (breadcrumb home).
-        # Deposit 2.0 per step — returning ants reinforce the trail,
-        # guiding nest-mates toward productive food sources.
-        if self.task == Task.CARRYING_FOOD:
+        # Only lay trail when the food source was a motherlode.
+        if self.task == Task.CARRYING_FOOD and self._lay_trail:
             pheromones.deposit(
                 PheromoneType.TRAIL,
                 self.x,
                 self.y,
-                2.0,
+                _TRAIL_DEPOSIT_PER_STEP,
             )
 
         return food_deposited
@@ -169,12 +206,19 @@ class Ant:
         pheromones: PheromoneField,
         rng: Generator,
     ) -> None:
-        """FORAGING ants walk, biased toward trail pheromone, seeking food.
+        """FORAGING ants walk, seeking food with correlated random walk.
 
-        When an ant finds a rich food source ("motherlode" — cell with
-        ≥2.0 food remaining after pickup), it deposits a heavy trail
-        pheromone (5.0) plus a RECRUITMENT burst, signalling other ants
-        to converge.  Moderate finds get a standard 3.0 trail deposit.
+        Movement strategy:
+
+        1. If standing on food, pick it up.  Only deposit a heavy trail
+           + RECRUITMENT for a "motherlode" (>=3.0 food remaining).
+           Small finds are picked up silently so they don't create
+           misleading trails to already-depleted sources.
+        2. Otherwise move using ``_move_foraging`` -- a correlated
+           random walk biased slightly toward trail pheromone (40%)
+           and repelled by TERRITORY (explored-area) pheromone.
+        3. Deposit a light TERRITORY mark so other scouts avoid
+           re-searching this cell.
         """
         from anthemyr.pheromones.fields import PheromoneType
 
@@ -183,36 +227,39 @@ class Ant:
         # Pick up food if present
         if cell.food > 0 and not cell.is_nest:
             remaining_before = cell.food
-            pickup = min(cell.food, 3.0)
+            pickup = min(cell.food, _FOOD_PICKUP)
             cell.food -= pickup
             self.carrying_food = pickup
             self.task = Task.CARRYING_FOOD
 
-            # Motherlode detection: rich source gets a heavy signal
-            if remaining_before >= 2.0:
+            # Motherlode: rich source gets a heavy trail + recruitment
+            if remaining_before >= _MOTHERLODE_THRESHOLD:
+                self._lay_trail = True
                 pheromones.deposit(
                     PheromoneType.TRAIL,
                     self.x,
                     self.y,
-                    5.0,
+                    _TRAIL_DEPOSIT_AT_FOOD,
                 )
                 pheromones.deposit(
                     PheromoneType.RECRUITMENT,
                     self.x,
                     self.y,
-                    3.0,
+                    _RECRUITMENT_DEPOSIT,
                 )
-            else:
-                pheromones.deposit(
-                    PheromoneType.TRAIL,
-                    self.x,
-                    self.y,
-                    3.0,
-                )
+            # Small finds: no trail deposit -- silent pickup
             return
 
-        # Move: bias toward trail pheromone, otherwise random walk
-        self._move_biased(world, pheromones, PheromoneType.TRAIL, rng)
+        # Deposit explored-area mark before moving
+        pheromones.deposit(
+            PheromoneType.TERRITORY,
+            self.x,
+            self.y,
+            _TERRITORY_DEPOSIT,
+        )
+
+        # Move: correlated walk with trail bias and territory avoidance
+        self._move_foraging(world, pheromones, rng)
 
     def _carry_food_home(
         self,
@@ -224,8 +271,9 @@ class Ant:
     ) -> float:
         """CARRYING_FOOD ants walk toward the nest and deposit food.
 
-        After depositing, the ant transitions straight to FORAGING
-        to avoid wasting ticks in IDLE re-rolling thresholds.
+        After depositing, the ant reverses its heading to walk back
+        toward the food source it just exploited (return-trip memory)
+        rather than starting a fresh random search from the nest.
 
         Returns:
             Amount of food deposited (> 0 only when reaching nest).
@@ -235,24 +283,35 @@ class Ant:
             deposited = self.carrying_food
             self.carrying_food = 0.0
             self.task = Task.FORAGING
+            self._lay_trail = False
+            # Reverse heading to walk back toward the food source
+            self.heading = (self.heading + math.pi) % (2.0 * math.pi)
             return deposited
 
         # Move toward nest with some randomness
         self._move_toward(world, nest_x, nest_y, rng)
         return 0.0
 
-    def _move_biased(
+    def _move_foraging(
         self,
         world: World,
         pheromones: PheromoneField,
-        bias_type: object,
         rng: Generator,
     ) -> None:
-        """Move to a neighbour, biased by pheromone concentration.
+        """Move using a correlated random walk with pheromone cues.
 
-        With probability 0.75, follows the strongest pheromone gradient;
-        otherwise picks a random neighbour.  The high follow-rate
-        ensures ants reliably exploit discovered food trails.
+        Decision order:
+
+        1. With probability ``_FORAGE_FOLLOW_RATE`` (40%), follow the
+           strongest TRAIL pheromone gradient (if any).  This is a
+           moderate exploitation rate -- enough to follow real trails
+           but not so high that ants cluster on noise.
+        2. Otherwise, use a **correlated random walk**: pick the
+           neighbour closest to the current heading (with Gaussian
+           angular noise), preferring cells with *lower* TERRITORY
+           concentration so scouts spread out.
+
+        After moving, update ``heading`` to match the step taken.
         """
         from anthemyr.pheromones.fields import PheromoneType
 
@@ -260,19 +319,70 @@ class Ant:
         if not neighbours:
             return
 
-        if rng.random() < 0.75 and isinstance(bias_type, PheromoneType):
+        # 1. Trail following (exploitation) -- 40% chance
+        if rng.random() < _FORAGE_FOLLOW_RATE:
             best = self._best_pheromone_neighbour(
                 neighbours,
                 pheromones,
-                bias_type,
+                PheromoneType.TRAIL,
             )
             if best is not None:
-                self.x, self.y = best.x, best.y
+                self._step_to(best)
                 return
 
-        # Random walk
-        chosen = neighbours[int(rng.integers(len(neighbours)))]
-        self.x, self.y = chosen.x, chosen.y
+        # 2. Correlated random walk with territory avoidance
+        self._correlated_step(world, pheromones, rng)
+
+    def _correlated_step(
+        self,
+        world: World,
+        pheromones: PheromoneField,
+        rng: Generator,
+    ) -> None:
+        """Take one step biased toward current heading, avoiding explored area.
+
+        For each neighbour, compute a score combining:
+        - **Heading alignment**: cos(angle_to_neighbour - noisy_heading).
+          Higher = better aligned with where the ant wants to go.
+        - **Territory penalty**: subtract TERRITORY concentration so
+          already-explored cells are less attractive.
+
+        Pick the neighbour with the best combined score.
+        """
+        from anthemyr.pheromones.fields import PheromoneType
+
+        neighbours = world.neighbours(self.x, self.y)
+        if not neighbours:
+            return
+
+        # Noisy heading: current heading + Gaussian noise
+        noisy = self.heading + float(rng.normal(0.0, _HEADING_NOISE_STD))
+
+        best_cell: Cell | None = None
+        best_score = -999.0
+        for cell in neighbours:
+            dx = cell.x - self.x
+            dy = cell.y - self.y
+            angle = math.atan2(dy, dx)
+            # Heading alignment: 1.0 when perfectly aligned, -1.0 opposite
+            alignment = math.cos(angle - noisy)
+            # Territory penalty: prefer unexplored cells
+            territory = pheromones.read(PheromoneType.TERRITORY, cell.x, cell.y)
+            score = alignment - territory
+            if score > best_score:
+                best_score = score
+                best_cell = cell
+
+        if best_cell is not None:
+            self._step_to(best_cell)
+
+    def _step_to(self, cell: Cell) -> None:
+        """Move to a cell and update heading to match the step direction."""
+        dx = cell.x - self.x
+        dy = cell.y - self.y
+        if dx != 0 or dy != 0:
+            self.heading = math.atan2(dy, dx)
+        self.x, self.y = cell.x, cell.y
 
     def _move_toward(
         self,
@@ -293,7 +403,7 @@ class Ant:
         # Pick from the closest 1-2 neighbours for faster returns
         top = min(2, len(neighbours))
         chosen = neighbours[int(rng.integers(top))]
-        self.x, self.y = chosen.x, chosen.y
+        self._step_to(chosen)
 
     @staticmethod
     def _best_pheromone_neighbour(

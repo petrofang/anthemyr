@@ -1,10 +1,10 @@
 # Anthemyr — Default Simulation Configuration
 # This file is loaded by anthemyr.simulation.config.SimulationConfig.from_yaml()
 
-seed: 42
+seed: 422
 
 # World dimensions (grid cells)
-world_width: 64
+world_width: 128
 world_height: 64
 
 # Environment
