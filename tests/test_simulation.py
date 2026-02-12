@@ -46,19 +46,20 @@ class TestSimulationEngine:
 
     def test_determinism(self) -> None:
         """Same seed must produce identical state after N ticks."""
-        cfg = SimulationConfig(seed=777, world_width=8, world_height=8)
+        cfg = SimulationConfig(
+            seed=777,
+            world_width=8,
+            world_height=8,
+            initial_ants=5,
+        )
 
         engine_a = SimulationEngine(config=cfg)
         colony_a = Colony(colony_id=0, nest_x=4, nest_y=4)
-        for _ in range(5):
-            colony_a.spawn_ant(engine_a.rng)
         engine_a.add_colony(colony_a)
         engine_a.run(ticks=20)
 
         engine_b = SimulationEngine(config=cfg)
         colony_b = Colony(colony_id=0, nest_x=4, nest_y=4)
-        for _ in range(5):
-            colony_b.spawn_ant(engine_b.rng)
         engine_b.add_colony(colony_b)
         engine_b.run(ticks=20)
 
@@ -72,3 +73,13 @@ class TestSimulationEngine:
                 engine_a.pheromone_field.get_layer(ptype),
                 engine_b.pheromone_field.get_layer(ptype),
             )
+
+        # Ant positions must match
+        for ant_a, ant_b in zip(
+            engine_a.colonies[0].ants,
+            engine_b.colonies[0].ants,
+            strict=True,
+        ):
+            assert ant_a.x == ant_b.x
+            assert ant_a.y == ant_b.y
+            assert ant_a.task == ant_b.task

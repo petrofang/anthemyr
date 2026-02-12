@@ -8,6 +8,10 @@ diffusion, and environment updates.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from numpy.random import Generator
 
 from anthemyr.world.cell import Cell
 
@@ -29,8 +33,7 @@ class World:
     def __post_init__(self) -> None:
         """Initialise the grid with default cells."""
         self.cells = [
-            [Cell(x=x, y=y) for x in range(self.width)]
-            for y in range(self.height)
+            [Cell(x=x, y=y) for x in range(self.width)] for y in range(self.height)
         ]
 
     def cell_at(self, x: int, y: int) -> Cell:
@@ -49,7 +52,11 @@ class World:
         return self.cells[y][x]
 
     def neighbours(
-        self, x: int, y: int, *, include_diagonals: bool = True,
+        self,
+        x: int,
+        y: int,
+        *,
+        include_diagonals: bool = True,
     ) -> list[Cell]:
         """Return adjacent cells for the given position.
 
@@ -71,3 +78,38 @@ class World:
             if 0 <= nx < self.width and 0 <= ny < self.height:
                 result.append(self.cells[ny][nx])
         return result
+
+    def populate(
+        self,
+        rng: Generator,
+        *,
+        food_density: float = 0.15,
+        food_amount_range: tuple[float, float] = (1.0, 5.0),
+    ) -> None:
+        """Scatter food across the grid randomly.
+
+        Args:
+            rng: Seeded random generator.
+            food_density: Probability that any given cell has food.
+            food_amount_range: (min, max) food placed per seeded cell.
+        """
+        lo, hi = food_amount_range
+        for row in self.cells:
+            for cell in row:
+                if rng.random() < food_density:
+                    cell.food = float(rng.uniform(lo, hi))
+
+    def mark_nest(self, cx: int, cy: int, radius: int = 2) -> None:
+        """Mark cells around ``(cx, cy)`` as nest territory.
+
+        Args:
+            cx: Centre column of the nest.
+            cy: Centre row of the nest.
+            radius: How many cells outward to mark.
+        """
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                nx, ny = cx + dx, cy + dy
+                if 0 <= nx < self.width and 0 <= ny < self.height:
+                    self.cells[ny][nx].is_nest = True
+                    self.cells[ny][nx].food = 0.0

@@ -54,18 +54,23 @@ class SimulationEngine:
             width=self.config.world_width,
             height=self.config.world_height,
         )
+        self.world.populate(self.rng)
         self.environment = Environment(day_length=self.config.day_length)
         self.pheromone_field = PheromoneField(
             width=self.config.world_width,
             height=self.config.world_height,
         )
+        self._apply_pheromone_config()
 
     def add_colony(self, colony: Colony) -> None:
-        """Register a colony in the simulation.
+        """Register a colony, mark its nest, and spawn initial ants.
 
         Args:
             colony: The colony to add.
         """
+        self.world.mark_nest(colony.nest_x, colony.nest_y)
+        for _ in range(self.config.initial_ants):
+            colony.spawn_ant(self.rng)
         self.colonies.append(colony)
 
     def step(self) -> None:
@@ -87,7 +92,14 @@ class SimulationEngine:
         # 3. Update ants
         for colony in self.colonies:
             for ant in colony.ants:
-                ant.update(self.world, self.rng)
+                food = ant.update(
+                    self.world,
+                    self.pheromone_field,
+                    colony.nest_x,
+                    colony.nest_y,
+                    self.rng,
+                )
+                colony.food_stores += food
 
         # 4. Resolve conflicts
         self._resolve_conflicts()
@@ -113,3 +125,20 @@ class SimulationEngine:
 
         TODO: Implement spatial conflict resolution.
         """
+
+    def _apply_pheromone_config(self) -> None:
+        """Apply per-type diffusion/evaporation rates from config."""
+        from anthemyr.pheromones.fields import PheromoneType
+
+        name_map: dict[str, PheromoneType] = {
+            pt.name.lower(): pt for pt in PheromoneType
+        }
+        for name, rates in self.config.pheromone_defaults.items():
+            ptype = name_map.get(name)
+            if ptype is None:
+                continue
+            layer = self.pheromone_field.layers[ptype]
+            if "diffusion_rate" in rates:
+                layer.diffusion_rate = rates["diffusion_rate"]
+            if "evaporation_rate" in rates:
+                layer.evaporation_rate = rates["evaporation_rate"]

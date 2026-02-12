@@ -1,5 +1,7 @@
 """Tests for anthemyr.world.world and anthemyr.world.cell."""
 
+from numpy.random import Generator
+
 from anthemyr.world.cell import Cell, SoilType
 from anthemyr.world.world import World
 
@@ -48,3 +50,23 @@ class TestWorld:
     def test_neighbours_center(self, small_world: World) -> None:
         neighbours = small_world.neighbours(3, 3, include_diagonals=True)
         assert len(neighbours) == 8
+
+    def test_populate_scatters_food(self, rng: Generator) -> None:
+        world = World(width=16, height=16)
+        world.populate(rng, food_density=0.5)
+        total_food = sum(c.food for row in world.cells for c in row)
+        assert total_food > 0
+
+    def test_populate_respects_density_zero(self, rng: Generator) -> None:
+        world = World(width=8, height=8)
+        world.populate(rng, food_density=0.0)
+        total_food = sum(c.food for row in world.cells for c in row)
+        assert total_food == 0.0
+
+    def test_mark_nest(self, small_world: World) -> None:
+        small_world.mark_nest(4, 4, radius=1)
+        assert small_world.cell_at(4, 4).is_nest
+        assert small_world.cell_at(3, 3).is_nest
+        assert small_world.cell_at(5, 5).is_nest
+        # Outside radius
+        assert not small_world.cell_at(2, 2).is_nest

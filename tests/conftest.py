@@ -7,7 +7,6 @@ import pytest
 from numpy.random import Generator
 
 from anthemyr.colony.colony import Colony
-from anthemyr.colony.traits import Traits
 from anthemyr.pheromones.fields import PheromoneField
 from anthemyr.simulation.config import SimulationConfig
 from anthemyr.world.world import World
@@ -21,7 +20,7 @@ def rng() -> Generator:
 
 @pytest.fixture
 def small_world() -> World:
-    """A small 8×8 world for fast tests."""
+    """A small 8x8 world for fast tests."""
     return World(width=8, height=8)
 
 
@@ -42,5 +41,5 @@ def default_colony(rng: Generator) -> Colony:
 
 @pytest.fixture
 def small_pheromone_field() -> PheromoneField:
-    """An 8×8 pheromone field for fast tests."""
+    """An 8x8 pheromone field for fast tests."""
     return PheromoneField(width=8, height=8)

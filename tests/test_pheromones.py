@@ -2,8 +2,12 @@
 
 import numpy as np
 
-from anthemyr.pheromones.diffusion import diffuse, evaporate, update_field
-from anthemyr.pheromones.fields import PheromoneField, PheromoneLayer, PheromoneType
+from anthemyr.pheromones.diffusion import diffuse, evaporate
+from anthemyr.pheromones.fields import (
+    PheromoneField,
+    PheromoneLayer,
+    PheromoneType,
+)
 
 
 class TestPheromoneField:
@@ -13,7 +17,10 @@ class TestPheromoneField:
         for ptype in PheromoneType:
             assert ptype in small_pheromone_field.layers
 
-    def test_initial_concentrations_zero(self, small_pheromone_field: PheromoneField) -> None:
+    def test_initial_concentrations_zero(
+        self,
+        small_pheromone_field: PheromoneField,
+    ) -> None:
         for layer in small_pheromone_field.layers.values():
             assert np.all(layer.grid == 0.0)
 
@@ -32,13 +39,21 @@ class TestEvaporation:
 
     def test_evaporation_reduces_concentration(self) -> None:
         grid = np.ones((4, 4), dtype=np.float64)
-        layer = PheromoneLayer(ptype=PheromoneType.TRAIL, grid=grid, evaporation_rate=0.1)
+        layer = PheromoneLayer(
+            ptype=PheromoneType.TRAIL,
+            grid=grid,
+            evaporation_rate=0.1,
+        )
         evaporate(layer)
         assert np.allclose(layer.grid, 0.9)
 
     def test_zero_evaporation(self) -> None:
         grid = np.ones((4, 4), dtype=np.float64)
-        layer = PheromoneLayer(ptype=PheromoneType.TRAIL, grid=grid, evaporation_rate=0.0)
+        layer = PheromoneLayer(
+            ptype=PheromoneType.TRAIL,
+            grid=grid,
+            evaporation_rate=0.0,
+        )
         evaporate(layer)
         assert np.allclose(layer.grid, 1.0)
 
