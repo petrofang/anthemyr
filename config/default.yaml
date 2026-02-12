@@ -31,7 +31,7 @@ brood_mature_ticks: 40     # ticks for brood to become an adult ant
 pheromone_defaults:
   trail:
     diffusion_rate: 0.15
-    evaporation_rate: 0.01
+    evaporation_rate: 0.005
   alarm:
     diffusion_rate: 0.25
     evaporation_rate: 0.15

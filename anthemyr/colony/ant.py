@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 _FORAGE_FOLLOW_RATE = 0.40  # trail-follow probability while searching
 _CARRY_FOLLOW_RATE = 0.75  # trail-follow probability while carrying food
 _GATHER_FOLLOW_RATE = 0.75  # trail/recruitment follow while gathering
-_GATHER_TRAIL_DEPOSIT = 1.0  # trail reinforcement per step while gathering
+_GATHER_TRAIL_DEPOSIT = 2.0  # trail reinforcement per step while gathering
 _GATHER_PATIENCE_MAX = 60  # ticks a gatherer walks without food before giving up
 _RECRUITMENT_SWITCH_BASE = 0.3  # base recruitment-response probability
 _HEADING_NOISE_STD = 0.5  # ~30 degrees Gaussian noise on heading

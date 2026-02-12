@@ -229,7 +229,7 @@ class TestGathering:
         assert not ant._lay_trail
 
     def test_gatherer_reinforces_trail(self, rng: Generator) -> None:
-        """GATHERING ant deposits trail pheromone at lower rate while walking."""
+        """GATHERING ant deposits trail pheromone while walking."""
         world = World(width=8, height=8)
         phero = PheromoneField(width=8, height=8)
         ant = Ant(
@@ -244,7 +244,7 @@ class TestGathering:
         assert ant.task == Task.GATHERING
         trail = phero.read(PheromoneType.TRAIL, ant.x, ant.y)
         assert trail > 0  # trail deposited
-        assert trail <= 1.0  # at the lower gatherer rate (1.0), not scout (2.0)
+        assert trail <= 2.0  # gatherers deposit at full carrier rate (2.0)
 
     def test_recruitment_pheromone_recruits_idle_ant(
         self,
